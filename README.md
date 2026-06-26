@@ -79,6 +79,7 @@ LiveKit token. All third-party calls go through the BFF or the agent.
 ```
 apps/
   web/        Next.js app + BFF route handlers
+  agent/      Python LiveKit Agents worker (the interviewer)
 packages/
   db/         Drizzle schema + migrations (Postgres + pgvector)
   shared/     shared TypeScript types + zod schemas (rubric, interview plan)
@@ -123,8 +124,8 @@ pnpm dev                    # run the web app
 
 ## Roadmap
 
-1. Monorepo scaffold, DB schema, auth, dashboard shell 
-2. LiveKit token minting + room join + text echo agent (prove transport)
+1. Monorepo scaffold, DB schema, auth, dashboard shell ✅
+2. LiveKit token minting + room join + text echo agent (prove transport) ✅
 3. Real voice loop: turn-based push-to-talk, VAD → STT → LLM → TTS, reconnect handling
 4. Interview state machine + tools + question bank + plan generation
 5. End → async feedback report + rubric radar + transcript playback
