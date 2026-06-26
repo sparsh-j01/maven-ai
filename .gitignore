@@ -1,0 +1,38 @@
+# ──────────────────────────────────────────────────────────────
+# Local context / planning docs — NEVER pushed to GitHub.
+# These exist only on this machine for development context.
+# ──────────────────────────────────────────────────────────────
+/docs
+.claude/
+
+# ── env / secrets ──────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── node / next / turbo ────────────────────────────────────────
+node_modules/
+.next/
+out/
+dist/
+build/
+.turbo/
+coverage/
+*.tsbuildinfo
+.pnpm-store/
+
+# ── python (voice agent) ───────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.python-version
+.ruff_cache/
+.pytest_cache/
+
+# ── misc ───────────────────────────────────────────────────────
+.DS_Store
+*.log
+.vercel
+.idea/
+.vscode/
