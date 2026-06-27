@@ -1,48 +1,66 @@
 "use client";
 
 import {
-  type RemoteParticipant,
-  Room,
-  RoomEvent,
-} from "livekit-client";
+  RoomAudioRenderer,
+  RoomContext,
+  useLocalParticipant,
+  useTranscriptions,
+  useVoiceAssistant,
+} from "@livekit/components-react";
+import { Room, RoomEvent } from "livekit-client";
 import { useParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 
-type ConnState = "connecting" | "connected" | "disconnected" | "error";
-type Msg = { from: "you" | "agent"; text: string };
+type ConnState =
+  | "checking-mic"
+  | "mic-denied"
+  | "connecting"
+  | "live"
+  | "reconnecting"
+  | "disconnected"
+  | "error";
 
-// Milestone 2: text-only transport proof. Connect to the room, send a data
-// message, render the agent's echo. The real voice room (dark, push-to-talk)
-// builds on this in milestone 3.
+// Milestone 3: the live voice room (dark theme). Connect to the room, publish
+// the mic only on push-to-talk, and run the turn-based loop against the
+// interviewer agent. No barge-in is enforced agent-side
+// (allow_interruptions=False); the UI makes turn ownership obvious. §7.4.
 export default function InterviewRoomPage() {
   const { id } = useParams<{ id: string }>();
-  const [state, setState] = useState<ConnState>("connecting");
+  const room = useMemo(() => new Room(), []);
+  const [state, setState] = useState<ConnState>("checking-mic");
   const [detail, setDetail] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Msg[]>([]);
-  const [draft, setDraft] = useState("");
-  const roomRef = useRef<Room | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    const room = new Room();
-    roomRef.current = room;
-
+    const onReconnecting = () => setState("reconnecting");
+    const onReconnected = () => setState("live");
+    const onDisconnected = () => setState("disconnected");
     room
-      .on(
-        RoomEvent.DataReceived,
-        (payload: Uint8Array, participant?: RemoteParticipant) => {
-          const text = new TextDecoder().decode(payload);
-          setMessages((m) => [
-            ...m,
-            { from: "agent", text: `${participant?.identity ?? "agent"}: ${text}` },
-          ]);
-        },
-      )
-      .on(RoomEvent.Disconnected, () => setState("disconnected"));
+      .on(RoomEvent.Reconnecting, onReconnecting)
+      .on(RoomEvent.Reconnected, onReconnected)
+      .on(RoomEvent.Disconnected, onDisconnected);
 
     (async () => {
+      // Mic pre-check (gated, §7.3): confirm permission before joining so the
+      // candidate never lands in the room with an agent that can't hear them.
+      // ponytail: permission gate only; the live input-level meter is part of
+      // the full setup wizard in milestone 4.
+      setState("checking-mic");
       try {
+        const probe = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
+        probe.getTracks().forEach((t) => t.stop()); // release; PTT re-acquires
+      } catch {
+        if (!cancelled) setState("mic-denied");
+        return;
+      }
+      if (cancelled) return;
+
+      try {
+        setState("connecting");
         const res = await fetch(`/api/interviews/${id}/token`, {
           method: "POST",
         });
@@ -53,98 +71,218 @@ export default function InterviewRoomPage() {
         };
         await room.connect(serverUrl, token);
         if (cancelled) return;
-        setState("connected");
+        // Mic stays off until the candidate holds to talk (push-to-talk).
+        await room.localParticipant.setMicrophoneEnabled(false);
+        setState("live");
       } catch (e) {
         if (cancelled) return;
-        setState("error");
         setDetail(e instanceof Error ? e.message : "connection failed");
+        setState("error");
       }
     })();
 
     return () => {
       cancelled = true;
+      room
+        .off(RoomEvent.Reconnecting, onReconnecting)
+        .off(RoomEvent.Reconnected, onReconnected)
+        .off(RoomEvent.Disconnected, onDisconnected);
       void room.disconnect();
     };
-  }, [id]);
-
-  async function send() {
-    const room = roomRef.current;
-    const text = draft.trim();
-    if (!room || !text || state !== "connected") return;
-    await room.localParticipant.publishData(new TextEncoder().encode(text), {
-      reliable: true,
-    });
-    setMessages((m) => [...m, { from: "you", text }]);
-    setDraft("");
-  }
-
-  const statusColor =
-    state === "connected"
-      ? "text-teal"
-      : state === "connecting"
-        ? "text-amber"
-        : "text-danger";
+  }, [id, room, attempt]);
 
   return (
-    <main className="flex min-h-screen flex-col bg-ink text-paper">
-      <header className="flex items-center justify-between border-b border-white/10 px-6 py-4">
-        <span className="font-mono text-sm">interview · {id.slice(0, 8)}</span>
-        <span className={`font-mono text-xs uppercase tracking-wide ${statusColor}`}>
-          {state}
-          {detail ? ` — ${detail}` : ""}
-        </span>
-      </header>
-
-      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-2 px-6 py-8">
-        {messages.length === 0 ? (
-          <p className="my-auto text-center text-sm text-paper/40">
-            Connected to the room. Send a message — the agent echoes it back.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-3">
-            {messages.map((m, i) => (
-              <li
-                key={i}
-                className={m.from === "you" ? "text-right" : "text-left"}
-              >
-                <span
-                  className={`inline-block rounded px-3 py-2 text-[18px] leading-relaxed ${
-                    m.from === "you"
-                      ? "bg-teal/20 text-paper"
-                      : "bg-white/10 text-paper"
-                  }`}
-                >
-                  {m.text}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <div className="border-t border-white/10 px-6 py-4">
-        <div className="mx-auto flex w-full max-w-2xl gap-3">
-          <input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void send();
-            }}
-            placeholder={
-              state === "connected" ? "Type a message…" : "Connecting…"
-            }
-            disabled={state !== "connected"}
-            className="flex-1 rounded border border-white/15 bg-white/5 px-3 py-2 text-paper placeholder:text-paper/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal disabled:opacity-50"
-          />
-          <Button
-            variant="accent"
-            onClick={() => void send()}
-            disabled={state !== "connected"}
+    <RoomContext.Provider value={room}>
+      <main className="flex min-h-screen flex-col bg-ink text-paper">
+        <header className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+          <span className="font-mono text-sm">interview · {id.slice(0, 8)}</span>
+          <span
+            className={`font-mono text-xs uppercase tracking-wide ${
+              state === "live"
+                ? "text-teal"
+                : state === "error" ||
+                    state === "disconnected" ||
+                    state === "mic-denied"
+                  ? "text-danger"
+                  : "text-amber"
+            }`}
           >
-            Send
-          </Button>
-        </div>
+            {state}
+            {detail ? ` — ${detail}` : ""}
+          </span>
+        </header>
+
+        {state === "disconnected" ? (
+          <DisconnectedChoice />
+        ) : state === "mic-denied" ? (
+          <MicDenied onRetry={() => setAttempt((a) => a + 1)} />
+        ) : (
+          <VoiceRoom connecting={state !== "live" && state !== "reconnecting"} />
+        )}
+
+        {/* Plays the interviewer's TTS audio coming from the room. */}
+        <RoomAudioRenderer />
+      </main>
+    </RoomContext.Provider>
+  );
+}
+
+function VoiceRoom({ connecting }: { connecting: boolean }) {
+  const { state: agentState } = useVoiceAssistant();
+  const { localParticipant } = useLocalParticipant();
+  const transcriptions = useTranscriptions();
+  const [talking, setTalking] = useState(false);
+
+  // Push-to-talk is only live when the agent is listening for your answer —
+  // you physically cannot interrupt while the interviewer is speaking.
+  const locked = connecting || agentState !== "listening";
+
+  function setMic(on: boolean) {
+    setTalking(on);
+    void localParticipant.setMicrophoneEnabled(on);
+  }
+
+  // Hold Space to talk (only on your turn).
+  useEffect(() => {
+    function down(e: KeyboardEvent) {
+      if (e.code === "Space" && !e.repeat && !locked) {
+        e.preventDefault();
+        setMic(true);
+      }
+    }
+    function up(e: KeyboardEvent) {
+      if (e.code === "Space") {
+        e.preventDefault();
+        setMic(false);
+      }
+    }
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locked]);
+
+  const status =
+    agentState === "speaking"
+      ? "Interviewer speaking — listen"
+      : agentState === "thinking"
+        ? "Thinking…"
+        : agentState === "listening"
+          ? "Your turn"
+          : connecting
+            ? "Connecting…"
+            : "Waiting for interviewer…";
+
+  // SpeakerOrb — the visual truth of who has the floor (§6.2, §7.4).
+  // ponytail: turn-state ring now; TTS-amplitude reactivity (BarVisualizer +
+  // @livekit/components-styles) is the polish upgrade in milestone 8.
+  const orb =
+    agentState === "speaking"
+      ? "border-paper/70 animate-pulse shadow-[0_0_80px_-20px_rgba(250,250,247,0.7)]"
+      : agentState === "thinking"
+        ? "border-amber animate-pulse shadow-[0_0_80px_-20px_#E0A100]"
+        : agentState === "listening"
+          ? "border-teal shadow-[0_0_90px_-20px_#0FA37F]"
+          : "border-white/20";
+
+  return (
+    <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center px-6 py-10">
+      <div
+        className={`h-40 w-40 rounded-full border-2 transition-all duration-300 ${orb}`}
+        aria-hidden
+      />
+      <p className="mt-6 text-sm text-paper/70" aria-live="polite">
+        {status}
+      </p>
+
+      {/* LiveTranscript — both speakers, current line last (auto-scrolls). */}
+      <ul className="mt-8 flex w-full flex-1 flex-col gap-3 overflow-y-auto">
+        {transcriptions.map((t, i) => {
+          const mine =
+            t.participantInfo?.identity === localParticipant.identity;
+          return (
+            <li key={i} className={mine ? "text-right" : "text-left"}>
+              <span className="text-xs uppercase tracking-wide text-paper/40">
+                {mine ? "You" : "Interviewer"}
+              </span>
+              <p className="text-[18px] leading-relaxed">{t.text}</p>
+            </li>
+          );
+        })}
+      </ul>
+
+      {/* Push-to-talk — disabled while the interviewer speaks (no interrupting). */}
+      <button
+        type="button"
+        disabled={locked}
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          setMic(true);
+        }}
+        onPointerUp={() => setMic(false)}
+        className={`mt-8 h-14 rounded-full px-8 font-medium transition-colors disabled:opacity-40 ${
+          talking
+            ? "bg-teal text-white"
+            : "bg-white/10 text-paper hover:bg-white/15"
+        }`}
+      >
+        {locked
+          ? "Listen…"
+          : talking
+            ? "Listening — release to send"
+            : "Hold to talk (or Space)"}
+      </button>
+    </div>
+  );
+}
+
+function DisconnectedChoice() {
+  // §7.4 disconnected: an explicit choice, never a silent drop. Continue rejoins
+  // the same room; start fresh begins a new interview. ponytail: full transcript
+  // rehydrate + agent-cursor resume arrives with persistence in milestone 4/5.
+  return (
+    <div className="m-auto flex max-w-sm flex-col items-center gap-5 px-6 text-center">
+      <div className="h-3 w-3 rounded-full bg-danger" />
+      <p className="text-paper/80">
+        You were disconnected. Your transcript is kept.
+      </p>
+      <div className="flex gap-3">
+        <Button variant="accent" onClick={() => window.location.reload()}>
+          Continue where you left off
+        </Button>
+        <Button
+          variant="outline"
+          className="border-white/20 text-paper hover:bg-white/10"
+          onClick={() => {
+            window.location.href = "/interview/new";
+          }}
+        >
+          Start fresh
+        </Button>
       </div>
-    </main>
+    </div>
+  );
+}
+
+function MicDenied({ onRetry }: { onRetry: () => void }) {
+  // §7.3 permission denied: an explicit recovery card, never a dead end.
+  return (
+    <div className="m-auto flex max-w-sm flex-col items-center gap-5 px-6 text-center">
+      <div className="h-3 w-3 rounded-full bg-danger" />
+      <div>
+        <p className="text-paper">Microphone access is blocked.</p>
+        <p className="mt-2 text-sm text-paper/60">
+          The interviewer needs your mic to hear your answers. Allow microphone
+          access for this site (via the lock or camera icon in your
+          browser&apos;s address bar), then retry.
+        </p>
+      </div>
+      <Button variant="accent" onClick={onRetry}>
+        Retry microphone
+      </Button>
+    </div>
   );
 }

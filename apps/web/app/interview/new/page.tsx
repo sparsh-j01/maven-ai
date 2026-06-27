@@ -34,9 +34,8 @@ export default function NewInterviewPage() {
           Start an interview
         </h1>
         <p className="mx-auto mt-2 max-w-sm text-sm text-ink/70">
-          This opens a live room and connects you to the interviewer. Right now
-          it&apos;s a transport check — type a message and the agent echoes it
-          back.
+          This opens a live room and connects you to the voice interviewer. Hold
+          the button (or Space) to talk; release when you&apos;re done answering.
         </p>
         <Button
           variant="accent"

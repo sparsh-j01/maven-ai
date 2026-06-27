@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^6.9.6",
+    "@livekit/components-react": "^2.9.21",
     "@maven-ai/db": "workspace:*",
     "@maven-ai/shared": "workspace:*",
     "class-variance-authority": "^0.7.1",
