@@ -17,7 +17,7 @@
     "@maven-ai/shared": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "drizzle-orm": "^0.38.3",
+    "drizzle-orm": "^0.45.2",
     "livekit-client": "^2.7.0",
     "livekit-server-sdk": "^2.9.0",
     "lucide-react": "^0.469.0",
