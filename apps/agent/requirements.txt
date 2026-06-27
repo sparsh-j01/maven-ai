@@ -1,2 +1,4 @@
-livekit-agents>=1.0,<2.0
+# livekit-agents core + the provider plugins for the voice loop (architecture
+# §2.4). The extras pin the plugins to a version that matches the agents core.
+livekit-agents[deepgram,google,silero]>=1.0,<2.0
 python-dotenv>=1.0
