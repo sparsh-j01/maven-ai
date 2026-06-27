@@ -4,9 +4,9 @@ import { and, eq } from "drizzle-orm";
 import { AccessToken } from "livekit-server-sdk";
 
 // POST /api/interviews/:id/token — mint a scoped LiveKit token for this room.
-// F1 (§8.1): pinned to the one room, identity-locked, short TTL. Milestone 2 is
-// a text echo, so the grant is data-channel only — audio publish lands with the
-// voice loop in milestone 3.
+// F1 (§8.1): pinned to the one room, identity-locked, short TTL. The grant is
+// audio-publish only (the candidate's mic for push-to-talk) plus the data
+// channel for live transcript — no video, no screen share.
 export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -36,7 +36,7 @@ export async function POST(
   at.addGrant({
     roomJoin: true,
     room,
-    canPublish: false, // audio publish enabled in milestone 3
+    canPublish: true, // candidate publishes mic audio for push-to-talk
     canSubscribe: true,
     canPublishData: true,
   });
