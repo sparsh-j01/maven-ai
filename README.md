@@ -93,7 +93,8 @@ infra/
 
 ```bash
 pnpm install
-cp .env.example .env        # fill in keys (Clerk + DATABASE_URL to start)
+pnpm bootstrap              # create .env (linked into apps/web + packages/db)
+# → open .env and fill in keys (Clerk + DATABASE_URL to start)
 docker compose up -d        # local Postgres (pgvector) + Redis
 pnpm db:push                # apply the schema
 pnpm dev                    # run the web app
@@ -103,6 +104,7 @@ pnpm dev                    # run the web app
 
 | Command | What it does |
 | --- | --- |
+| `pnpm bootstrap` | Create `.env` and link it into `apps/web` + `packages/db` |
 | `pnpm dev` | Run apps in dev (Turborepo) |
 | `pnpm build` | Build all packages |
 | `pnpm lint` / `pnpm typecheck` | Lint / type-check |

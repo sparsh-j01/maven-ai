@@ -6,6 +6,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "bootstrap": "cp -n .env.example .env; ln -sf ../../.env apps/web/.env; ln -sf ../../.env packages/db/.env",
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
