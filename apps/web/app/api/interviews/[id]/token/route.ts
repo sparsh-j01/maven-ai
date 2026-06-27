@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { getDb, interviews } from "@maven-ai/db";
 import { and, eq } from "drizzle-orm";
-import { AccessToken } from "livekit-server-sdk";
+import { AccessToken, TrackSource } from "livekit-server-sdk";
 
 // POST /api/interviews/:id/token — mint a scoped LiveKit token for this room.
 // F1 (§8.1): pinned to the one room, identity-locked, short TTL. The grant is
@@ -36,7 +36,8 @@ export async function POST(
   at.addGrant({
     roomJoin: true,
     room,
-    canPublish: true, // candidate publishes mic audio for push-to-talk
+    canPublish: true,
+    canPublishSources: [TrackSource.MICROPHONE], // mic only — no video/screen share
     canSubscribe: true,
     canPublishData: true,
   });
