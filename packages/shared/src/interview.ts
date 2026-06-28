@@ -1,7 +1,15 @@
 import { z } from "zod";
 
 // Locked enums — mirror the data model in docs/architecture.md §3.
-export const seniority = z.enum(["intern", "junior", "mid", "senior"]);
+export const seniority = z.enum([
+  "intern",
+  "junior",
+  "mid",
+  "senior",
+  "sde1",
+  "sde2",
+  "sde3",
+]);
 export type Seniority = z.infer<typeof seniority>;
 
 export const interviewType = z.enum([
