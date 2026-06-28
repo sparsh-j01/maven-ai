@@ -4,10 +4,12 @@ packages:
 allowBuilds:
   '@clerk/shared': true
   esbuild: true
+  protobufjs: true
   sharp: true
   unrs-resolver: true
 onlyBuiltDependencies:
   - "@clerk/shared"
   - esbuild
+  - protobufjs
   - sharp
   - unrs-resolver
