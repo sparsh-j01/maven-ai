@@ -34,6 +34,7 @@ from livekit.agents import (
     cli,
     function_tool,
 )
+from livekit import rtc
 from livekit.plugins import deepgram, google, silero
 
 from plan_walker import PlanWalker
@@ -138,11 +139,13 @@ class InterviewAgent(Agent):
         walker: PlanWalker,
         db: Optional[asyncpg.Connection],
         interview_id: uuid.UUID,
+        room: rtc.Room,
     ) -> None:
         super().__init__(instructions=instructions)
         self._walker = walker
         self._db = db
         self._interview_id = interview_id
+        self._room = room
         self._signals = []
         # One asyncpg connection, several writers (cursor persist + turn inserts
         # fired from the session event handler can overlap). asyncpg can't run
@@ -258,13 +261,21 @@ class InterviewAgent(Agent):
                     )
             except Exception:
                 logger.exception("end_interview persist failed")
+        # Tell the room the interview is over so the UI can flip to the "ended"
+        # state and surface the report link (§7.4). Best-effort.
+        try:
+            await self._room.local_participant.publish_data(
+                json.dumps({"type": "ended"}), reliable=True, topic="maven"
+            )
+        except Exception:
+            logger.exception("ended signal publish failed")
         logger.info(
             "interview %s ended (%d signals logged)",
             self._interview_id,
             len(self._signals),
         )
-        # ponytail: graceful agent teardown + report generation land with the
-        # feedback worker (M5); status='processing' is the trigger it watches for.
+        # The report is generated asynchronously: status='processing' is the
+        # trigger the scorer watches for, kicked when the report page opens (§4.3).
         return "Interview recorded. You can stop now."
 
 
@@ -332,6 +343,7 @@ async def entrypoint(ctx: JobContext) -> None:
         walker=walker,
         db=db,
         interview_id=interview_id,
+        room=ctx.room,
     )
     session = _make_session()
 
