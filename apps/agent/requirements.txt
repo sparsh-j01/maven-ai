@@ -2,3 +2,6 @@
 # §2.4). The extras pin the plugins to a version that matches the agents core.
 livekit-agents[deepgram,google,silero]>=1.0,<2.0
 python-dotenv>=1.0
+# Cursor persistence: the agent writes current_phase/plan_cursor to Postgres on
+# each transition so a restart resumes (architecture §2.3).
+asyncpg>=0.29

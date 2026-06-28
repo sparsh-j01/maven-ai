@@ -1,59 +1,66 @@
-"""Maven AI voice agent — milestone 3: the turn-based voice loop.
+"""Maven AI voice agent — milestone 4: the plan-driven interviewer.
 
-A LiveKit Agents worker that joins each interview room and runs the real
-VAD -> STT -> LLM -> TTS pipeline as a mock interviewer (Silero VAD, Deepgram
-STT, Gemini Flash, Deepgram Aura TTS). It is turn-based with **no barge-in**
-(`allow_interruptions=False`): the interviewer asks its question fully, then it
-is clearly the candidate's turn. Providers sit behind LiveKit plugins, so
-swapping Deepgram/Gemini is a config change, not a rewrite (architecture §2.4).
+A LiveKit Agents worker that joins each interview room and runs the turn-based
+voice loop (Silero VAD -> Deepgram STT -> Gemini Flash -> Deepgram Aura TTS, no
+barge-in, §2.2). On top of the M3 voice loop it now drives a real interview
+STATE MACHINE: it reads the per-interview plan from room metadata (delivered by
+the BFF, §2.1 step 3) and walks intro -> warmup -> technical -> behavioral ->
+wrap_up by calling tools (next_question / score_answer / end_interview, §2.3).
+The cursor (current_phase + plan_cursor) is persisted to the interviews row on
+every transition, so a worker restart rehydrates exactly where it left off.
+
+Providers sit behind LiveKit plugins, so swapping Deepgram/Gemini is a config
+change, not a rewrite (§2.4).
 """
 
+import json
 import logging
+import os
+import uuid
 from pathlib import Path
+from typing import Literal, Optional
 
+import asyncpg
 from dotenv import load_dotenv
-from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
+from livekit.agents import (
+    Agent,
+    AgentSession,
+    JobContext,
+    WorkerOptions,
+    cli,
+    function_tool,
+)
 from livekit.plugins import deepgram, google, silero
 
-# Agent reads provider keys + LIVEKIT_* from the repo-root .env (the same values
-# the web app uses): LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET, plus
-# DEEPGRAM_API_KEY and GOOGLE_API_KEY for the pipeline.
+from plan_walker import PlanWalker
+from prompt_context import context_block
+
+# Agent reads provider keys + LIVEKIT_* + DATABASE_URL from the repo-root .env
+# (the same values the web app uses).
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 logger = logging.getLogger("interview-agent")
 
-# ponytail: one generic interviewer prompt. The per-interview plan + phase state
-# machine (role/seniority/company pulled from room metadata) lands in milestone
-# 4; milestone 3 just proves the voice loop end to end.
-INTERVIEWER_INSTRUCTIONS = """\
+# Fallback persona for local runs with no plan in room metadata (e.g. `python
+# main.py dev` without going through the web app). The real interview uses the
+# plan-driven instructions built per session below.
+GENERIC_INSTRUCTIONS = """\
 You are a professional technical interviewer running a live mock interview for a \
 software engineering role. This is a spoken conversation, so keep every turn \
-short and natural — no markdown, no bullet lists, no code blocks, no emoji.
+short and natural — no markdown, no lists, no code blocks, no emoji.
 
-Run it like a real interview: open with a one-line greeting and a single warm-up \
-question, then ask ONE question at a time and wait for the candidate's full \
-answer before responding. Cover a warm-up, then a couple of technical questions, \
-then thank them and wrap up.
-
-Judge every answer for yourself before you reply, but never say outright whether \
-it was right or wrong and never read scores out loud. If an answer is correct and \
-complete, acknowledge it briefly and move on. If it is wrong, vague, or \
-incomplete, do NOT accept it or call it good — ask one pointed follow-up that \
-targets the specific gap or mistake (an edge case it misses, a wrong claim worth \
-re-examining, or "what's the time complexity and why"), giving the candidate a \
-chance to correct it. Press once or twice on a weak answer before moving on. Stay \
-warm and professional, but stay honest: never affirm a claim that is incorrect, \
-and do not give away the answer."""
+Open with a one-line greeting and a single warm-up question, then ask ONE \
+question at a time and wait for the candidate's full answer. Cover a warm-up, a \
+couple of technical questions, then thank them and wrap up. Judge every answer \
+honestly: if it is wrong or vague, ask one pointed follow-up rather than \
+accepting it; never read scores out loud and never give away the answer."""
 
 
-async def entrypoint(ctx: JobContext) -> None:
-    await ctx.connect()
-    logger.info("interviewer joined room %s", ctx.room.name)
-
-    # allow_interruptions=False = no barge-in: the candidate cannot cut off the
-    # interviewer mid-question (§2.2). End of the candidate's turn is detected by
-    # Silero VAD endpointing (and client-side push-to-talk releasing the mic).
-    session = AgentSession(
+def _make_session() -> AgentSession:
+    # allow_interruptions=False = no barge-in (§2.2): the candidate cannot cut off
+    # the interviewer mid-question. End of the candidate's turn is Silero VAD
+    # endpointing plus client-side push-to-talk releasing the mic.
+    return AgentSession(
         vad=silero.VAD.load(),
         stt=deepgram.STT(model="nova-3"),
         llm=google.LLM(model="gemini-2.5-flash"),
@@ -61,16 +68,243 @@ async def entrypoint(ctx: JobContext) -> None:
         allow_interruptions=False,
     )
 
-    await session.start(agent=Agent(instructions=INTERVIEWER_INSTRUCTIONS), room=ctx.room)
 
-    # The interviewer speaks first.
-    await session.generate_reply(
-        instructions="Greet the candidate in one sentence and ask your first warm-up question.",
+def _parse_metadata(raw: Optional[str]) -> Optional[dict]:
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (ValueError, TypeError):
+        logger.warning("room metadata is not valid JSON; ignoring")
+        return None
+
+
+def _role_line(meta: dict) -> str:
+    role = meta.get("role") or "software engineering"
+    seniority = meta.get("seniority") or ""
+    company = meta.get("company")
+    suffix = f" at {company}" if company else ""
+    return f"{seniority} {role}{suffix}".strip()
+
+
+def _instructions(meta: dict) -> str:
+    return f"""\
+You are a professional, warm but rigorous interviewer conducting a live, spoken \
+mock interview for a {_role_line(meta)} position. This is a voice conversation: \
+keep every turn short and natural — no markdown, no lists, no code blocks, no \
+emoji — and never read scores or labels out loud.
+
+You run a STRUCTURED interview using tools. Follow this protocol exactly:
+- Ask exactly ONE question at a time, then stop and wait for the candidate's \
+full answer.
+- Call next_question to get each question. It returns the phase and the topic to \
+ask; ask it naturally in your own words, faithful to what it asks.
+- After the candidate answers, silently call score_answer with your honest \
+assessment (competency, a rating of weak/ok/strong, a one-line private note). \
+Never tell the candidate their rating or that you are scoring.
+- Judge each answer yourself. If it is wrong, vague, or incomplete, do NOT \
+accept it — ask ONE pointed follow-up at the specific gap before moving on; you \
+may press once or twice. If it is solid, acknowledge briefly and continue. Never \
+affirm an incorrect claim and never give away the answer.
+- When you are ready for the next topic, call next_question again. When it says \
+the plan is complete, thank the candidate, give a brief encouraging close, then \
+call end_interview.""" + context_block(meta)
+
+
+def _opening(resuming: bool) -> str:
+    if resuming:
+        return (
+            "This interview is resuming after a brief interruption. In one "
+            "sentence, welcome the candidate back, then call next_question to "
+            "continue where you left off."
+        )
+    return (
+        "Greet the candidate warmly in one sentence, then call next_question to "
+        "get the first question and ask it."
     )
+
+
+class InterviewAgent(Agent):
+    """The interviewer: an LLM driven by the plan via tools (§2.3)."""
+
+    def __init__(
+        self,
+        *,
+        instructions: str,
+        walker: PlanWalker,
+        db: Optional[asyncpg.Connection],
+        interview_id: uuid.UUID,
+    ) -> None:
+        super().__init__(instructions=instructions)
+        self._walker = walker
+        self._db = db
+        self._interview_id = interview_id
+        self._signals = []
+
+    async def _persist_cursor(self) -> None:
+        if not self._db:
+            return
+        try:
+            await self._db.execute(
+                "UPDATE interviews SET current_phase = $1, plan_cursor = $2 WHERE id = $3",
+                self._walker.current_phase,
+                self._walker.cursor,
+                self._interview_id,
+            )
+        except Exception:  # best-effort — a DB blip must not kill the interview
+            logger.exception("cursor persist failed")
+
+    @function_tool()
+    async def next_question(self) -> str:
+        """Advance to the next planned question. Returns the phase and the topic
+        to ask next, or a wrap-up signal when the plan is complete. Call this when
+        you are ready to move on from the current topic."""
+        item = self._walker.next()
+        await self._persist_cursor()
+        if item is None:
+            return (
+                "The planned questions are complete. Thank the candidate, give a "
+                "brief encouraging close, then call end_interview."
+            )
+        phase, q = item
+        hint = q.get("rubricHint")
+        guidance = f" Privately assess for: {hint}" if hint else ""
+        return (
+            f"Phase: {phase}. Difficulty: {q.get('difficulty', 'n/a')}. "
+            f"Ask this next, in your own words: {q['prompt']}.{guidance}"
+        )
+
+    @function_tool()
+    async def score_answer(
+        self,
+        competency: str,
+        rating: Literal["weak", "ok", "strong"],
+        note: str = "",
+    ) -> str:
+        """Privately log your assessment of the candidate's most recent answer.
+        For the feedback report only — never shown or spoken to the candidate, and
+        it does not change the conversation."""
+        # F2 (scoring injection, §8.1): this only LOGS a signal — it cannot set
+        # final scores, and the candidate's words never reach an instruction
+        # position. The async scorer (M5) re-derives the real rubric from the
+        # transcript delimited as data.
+        self._signals.append(
+            {
+                "phase": self._walker.current_phase,
+                "competency": competency,
+                "rating": rating,
+                "note": note,
+            }
+        )
+        logger.info(
+            "signal phase=%s competency=%s rating=%s",
+            self._walker.current_phase,
+            competency,
+            rating,
+        )
+        return "Noted."
+
+    @function_tool()
+    async def end_interview(self) -> str:
+        """End the interview. Call this only after you have delivered the closing
+        remarks and the plan is complete."""
+        if self._db:
+            try:
+                await self._db.execute(
+                    "UPDATE interviews SET status = 'processing', ended_at = now(), "
+                    "current_phase = 'wrap_up', plan_cursor = $1 WHERE id = $2",
+                    self._walker.cursor,
+                    self._interview_id,
+                )
+            except Exception:
+                logger.exception("end_interview persist failed")
+        logger.info(
+            "interview %s ended (%d signals logged)",
+            self._interview_id,
+            len(self._signals),
+        )
+        # ponytail: graceful agent teardown + report generation land with the
+        # feedback worker (M5); status='processing' is the trigger it watches for.
+        return "Interview recorded. You can stop now."
+
+
+async def _connect_db() -> Optional[asyncpg.Connection]:
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        logger.warning("DATABASE_URL unset — cursor will not persist (resume disabled)")
+        return None
+    try:
+        return await asyncpg.connect(url)
+    except Exception:
+        logger.exception("DB connect failed — continuing without persistence")
+        return None
+
+
+async def _read_cursor(db: Optional[asyncpg.Connection], interview_id: uuid.UUID) -> int:
+    if not db:
+        return 0
+    try:
+        row = await db.fetchrow(
+            "SELECT plan_cursor FROM interviews WHERE id = $1", interview_id
+        )
+    except Exception:
+        logger.exception("cursor read failed — starting from the top")
+        return 0
+    if not row or row["plan_cursor"] is None:
+        return 0
+    return int(row["plan_cursor"])
+
+
+async def entrypoint(ctx: JobContext) -> None:
+    await ctx.connect()
+    logger.info("interviewer joined room %s", ctx.room.name)
+
+    meta = _parse_metadata(ctx.room.metadata)
+    if not meta or not meta.get("plan"):
+        # No per-interview plan (e.g. a bare local run): fall back to the M3
+        # generic interviewer so the voice loop is still exercisable.
+        logger.warning("no plan in room metadata — running the generic interviewer")
+        session = _make_session()
+        await session.start(agent=Agent(instructions=GENERIC_INSTRUCTIONS), room=ctx.room)
+        await ctx.wait_for_participant()
+        await session.generate_reply(
+            instructions="Greet the candidate in one sentence and ask your first warm-up question.",
+        )
+        return
+
+    interview_id = uuid.UUID(str(meta["interviewId"]))
+    db = await _connect_db()
+    if db:
+        ctx.add_shutdown_callback(db.close)
+
+    cursor = await _read_cursor(db, interview_id)
+    walker = PlanWalker(meta["plan"], cursor)
+    resuming = cursor > 0
+    logger.info(
+        "interview %s: %s at cursor %d",
+        interview_id,
+        "resuming" if resuming else "starting",
+        cursor,
+    )
+
+    session = _make_session()
+    await session.start(
+        agent=InterviewAgent(
+            instructions=_instructions(meta),
+            walker=walker,
+            db=db,
+            interview_id=interview_id,
+        ),
+        room=ctx.room,
+    )
+    # Don't greet an empty room: the BFF pre-creates the room (with metadata), so
+    # the agent can be dispatched before the candidate has joined.
+    await ctx.wait_for_participant()
+    await session.generate_reply(instructions=_opening(resuming))
 
 
 if __name__ == "__main__":
     # ponytail: no agent_name -> automatic dispatch to every new interview room.
-    # Explicit dispatch with interview_id + plan as room metadata (§2.1 step 3)
-    # lands in milestone 4 when the agent needs per-interview context.
+    # The BFF pre-creates the room with the plan as metadata, so explicit dispatch
+    # isn't needed; the agent reads its context from ctx.room.metadata.
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
