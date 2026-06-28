@@ -19,6 +19,7 @@ type ConnState =
   | "live"
   | "reconnecting"
   | "disconnected"
+  | "ended"
   | "error";
 
 // Milestone 3: the live voice room (dark theme). Connect to the room, publish
@@ -37,10 +38,21 @@ export default function InterviewRoomPage() {
     const onReconnecting = () => setState("reconnecting");
     const onReconnected = () => setState("live");
     const onDisconnected = () => setState("disconnected");
+    // The agent publishes {type:"ended"} over the data channel when it calls
+    // end_interview (§7.4) — flip to the ended state so we can offer the report.
+    const onData = (payload: Uint8Array) => {
+      try {
+        const msg = JSON.parse(new TextDecoder().decode(payload));
+        if (msg?.type === "ended") setState("ended");
+      } catch {
+        // not our message
+      }
+    };
     room
       .on(RoomEvent.Reconnecting, onReconnecting)
       .on(RoomEvent.Reconnected, onReconnected)
-      .on(RoomEvent.Disconnected, onDisconnected);
+      .on(RoomEvent.Disconnected, onDisconnected)
+      .on(RoomEvent.DataReceived, onData);
 
     (async () => {
       // Mic pre-check (gated, §7.3): confirm permission before joining so the
@@ -86,7 +98,8 @@ export default function InterviewRoomPage() {
       room
         .off(RoomEvent.Reconnecting, onReconnecting)
         .off(RoomEvent.Reconnected, onReconnected)
-        .off(RoomEvent.Disconnected, onDisconnected);
+        .off(RoomEvent.Disconnected, onDisconnected)
+        .off(RoomEvent.DataReceived, onData);
       void room.disconnect();
     };
   }, [id, room, attempt]);
@@ -98,7 +111,7 @@ export default function InterviewRoomPage() {
           <span className="font-mono text-sm">interview · {id.slice(0, 8)}</span>
           <span
             className={`font-mono text-xs uppercase tracking-wide ${
-              state === "live"
+              state === "live" || state === "ended"
                 ? "text-teal"
                 : state === "error" ||
                     state === "disconnected" ||
@@ -112,7 +125,9 @@ export default function InterviewRoomPage() {
           </span>
         </header>
 
-        {state === "disconnected" ? (
+        {state === "ended" ? (
+          <Ended id={id} />
+        ) : state === "disconnected" ? (
           <DisconnectedChoice />
         ) : state === "mic-denied" ? (
           <MicDenied onRetry={() => setAttempt((a) => a + 1)} />
@@ -235,6 +250,27 @@ function VoiceRoom({ connecting }: { connecting: boolean }) {
             ? "Listening — release to send"
             : "Hold to talk (or Space)"}
       </button>
+    </div>
+  );
+}
+
+function Ended({ id }: { id: string }) {
+  // §7.4 ended: a calm confirmation that hands off to the report, which kicks
+  // scoring and shows progress. The transcript is kept either way.
+  return (
+    <div className="m-auto flex max-w-sm flex-col items-center gap-5 px-6 text-center">
+      <div className="h-3 w-3 rounded-full bg-teal" />
+      <p className="text-paper/80">
+        That&apos;s a wrap — nice work. We&apos;re scoring your interview now.
+      </p>
+      <Button
+        variant="accent"
+        onClick={() => {
+          window.location.href = `/interview/${id}/report`;
+        }}
+      >
+        View your report
+      </Button>
     </div>
   );
 }

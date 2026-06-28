@@ -1,7 +1,6 @@
 import { UserButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
-import { interviews } from "@maven-ai/db";
-import { getDb } from "@maven-ai/db";
+import { feedbackReports, getDb, interviews } from "@maven-ai/db";
 import { desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -9,15 +8,29 @@ import { Card } from "@/components/ui/card";
 
 export const dynamic = "force-dynamic";
 
-type InterviewRow = typeof interviews.$inferSelect;
+// Once an interview ends it lives at its report; before that, the live room.
+const REPORT_STATUSES = new Set(["processing", "ready", "failed"]);
+const hrefFor = (iv: { id: string; status: string }) =>
+  REPORT_STATUSES.has(iv.status)
+    ? `/interview/${iv.id}/report`
+    : `/interview/${iv.id}`;
 
-async function listInterviews(userId: string): Promise<InterviewRow[]> {
+async function listInterviews(userId: string) {
   // ponytail: tolerate an un-migrated/unreachable DB so the shell renders
   // before `pnpm db:push` has run. Remove the catch once migrations are wired.
   try {
     return await getDb()
-      .select()
+      .select({
+        id: interviews.id,
+        role: interviews.role,
+        company: interviews.company,
+        seniority: interviews.seniority,
+        type: interviews.type,
+        status: interviews.status,
+        overallScore: feedbackReports.overallScore,
+      })
       .from(interviews)
+      .leftJoin(feedbackReports, eq(feedbackReports.interviewId, interviews.id))
       .where(eq(interviews.userId, userId))
       .orderBy(desc(interviews.createdAt))
       .limit(20);
@@ -66,7 +79,7 @@ export default async function DashboardPage() {
         <ul className="mt-8 grid gap-3">
           {rows.map((iv) => (
             <li key={iv.id}>
-              <Link href={`/interview/${iv.id}`}>
+              <Link href={hrefFor(iv)}>
                 <Card className="flex items-center justify-between py-4 transition-colors hover:bg-ink/[0.02]">
                   <div>
                     <p className="font-medium">{iv.role}</p>
@@ -75,9 +88,16 @@ export default async function DashboardPage() {
                       {iv.company ? ` · ${iv.company}` : ""}
                     </p>
                   </div>
-                  <span className="font-mono text-xs uppercase tracking-wide text-ink/50">
-                    {iv.status}
-                  </span>
+                  {iv.status === "ready" && iv.overallScore != null ? (
+                    <span className="font-mono text-lg font-semibold text-teal">
+                      {Math.round(Number(iv.overallScore))}
+                      <span className="text-xs text-ink/40">/100</span>
+                    </span>
+                  ) : (
+                    <span className="font-mono text-xs uppercase tracking-wide text-ink/50">
+                      {iv.status}
+                    </span>
+                  )}
                 </Card>
               </Link>
             </li>
