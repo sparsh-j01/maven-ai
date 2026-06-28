@@ -7,15 +7,19 @@ STATE MACHINE: it reads the per-interview plan from room metadata (delivered by
 the BFF, §2.1 step 3) and walks intro -> warmup -> technical -> behavioral ->
 wrap_up by calling tools (next_question / score_answer / end_interview, §2.3).
 The cursor (current_phase + plan_cursor) is persisted to the interviews row on
-every transition, so a worker restart rehydrates exactly where it left off.
+every transition, so a worker restart rehydrates exactly where it left off. Every
+spoken turn is written to interview_turns as it lands — the transcript the async
+scorer and the report read back (§2.2, §4.3).
 
 Providers sit behind LiveKit plugins, so swapping Deepgram/Gemini is a config
 change, not a rewrite (§2.4).
 """
 
+import asyncio
 import json
 import logging
 import os
+import time
 import uuid
 from pathlib import Path
 from typing import Literal, Optional
@@ -140,19 +144,54 @@ class InterviewAgent(Agent):
         self._db = db
         self._interview_id = interview_id
         self._signals = []
+        # One asyncpg connection, several writers (cursor persist + turn inserts
+        # fired from the session event handler can overlap). asyncpg can't run
+        # concurrent queries on a connection, so serialize every DB write.
+        self._db_lock = asyncio.Lock()
+        # Transcript offsets are measured from here; turns tile end-to-end so the
+        # report can order and (later) seek them. §2.2.
+        self._start_ms = time.monotonic() * 1000
+        self._last_offset = 0
 
     async def _persist_cursor(self) -> None:
         if not self._db:
             return
         try:
-            await self._db.execute(
-                "UPDATE interviews SET current_phase = $1, plan_cursor = $2 WHERE id = $3",
-                self._walker.current_phase,
-                self._walker.cursor,
-                self._interview_id,
-            )
+            async with self._db_lock:
+                await self._db.execute(
+                    "UPDATE interviews SET current_phase = $1, plan_cursor = $2 WHERE id = $3",
+                    self._walker.current_phase,
+                    self._walker.cursor,
+                    self._interview_id,
+                )
         except Exception:  # best-effort — a DB blip must not kill the interview
             logger.exception("cursor persist failed")
+
+    async def record_turn(self, speaker: str, text: str) -> None:
+        """Persist one spoken turn to interview_turns (§2.2) — both speakers, in
+        order. The async scorer (§4.3) and the report transcript read from here.
+        Best-effort: a DB blip must never interrupt the live interview."""
+        if not self._db:
+            return
+        now = int(time.monotonic() * 1000 - self._start_ms)
+        start = self._last_offset
+        end = now if now > start else start
+        self._last_offset = end
+        try:
+            async with self._db_lock:
+                await self._db.execute(
+                    "INSERT INTO interview_turns "
+                    "(interview_id, speaker, text, ts_start_ms, ts_end_ms, phase) "
+                    "VALUES ($1, $2, $3, $4, $5, $6)",
+                    self._interview_id,
+                    speaker,
+                    text,
+                    start,
+                    end,
+                    self._walker.current_phase,
+                )
+        except Exception:
+            logger.exception("turn persist failed")
 
     @function_tool()
     async def next_question(self) -> str:
@@ -210,12 +249,13 @@ class InterviewAgent(Agent):
         remarks and the plan is complete."""
         if self._db:
             try:
-                await self._db.execute(
-                    "UPDATE interviews SET status = 'processing', ended_at = now(), "
-                    "current_phase = 'wrap_up', plan_cursor = $1 WHERE id = $2",
-                    self._walker.cursor,
-                    self._interview_id,
-                )
+                async with self._db_lock:
+                    await self._db.execute(
+                        "UPDATE interviews SET status = 'processing', ended_at = now(), "
+                        "current_phase = 'wrap_up', plan_cursor = $1 WHERE id = $2",
+                        self._walker.cursor,
+                        self._interview_id,
+                    )
             except Exception:
                 logger.exception("end_interview persist failed")
         logger.info(
@@ -287,16 +327,26 @@ async def entrypoint(ctx: JobContext) -> None:
         cursor,
     )
 
-    session = _make_session()
-    await session.start(
-        agent=InterviewAgent(
-            instructions=_instructions(meta),
-            walker=walker,
-            db=db,
-            interview_id=interview_id,
-        ),
-        room=ctx.room,
+    agent = InterviewAgent(
+        instructions=_instructions(meta),
+        walker=walker,
+        db=db,
+        interview_id=interview_id,
     )
+    session = _make_session()
+
+    # Persist every completed turn (both speakers) as it lands (§2.2). The handler
+    # is sync; hand the DB write to the loop so it never blocks the voice pipeline.
+    @session.on("conversation_item_added")
+    def _on_item(ev: object) -> None:
+        item = getattr(ev, "item", None)
+        role = getattr(item, "role", None)
+        text = (getattr(item, "text_content", None) or "").strip()
+        speaker = {"user": "candidate", "assistant": "interviewer"}.get(role)
+        if speaker and text:
+            asyncio.create_task(agent.record_turn(speaker, text))
+
+    await session.start(agent=agent, room=ctx.room)
     # Don't greet an empty room: the BFF pre-creates the room (with metadata), so
     # the agent can be dispatched before the candidate has joined.
     await ctx.wait_for_participant()
