@@ -8,7 +8,7 @@ const steps = [
   {
     n: "1",
     title: "Pick a role",
-    body: "Choose the role, company flavor, and seniority. Optionally upload your resume so questions match your background.",
+    body: "Choose the role, company flavor, and seniority. Optionally add your resume and the job description so questions match your background.",
   },
   {
     n: "2",
