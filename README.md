@@ -6,8 +6,9 @@ coding round, and get a rubric-scored feedback report with a replayable
 transcript.
 
 > **Status:** in active development. The monorepo, database schema, shared
-> contracts, auth, web shell, the live turn-based voice loop, and the plan-driven
-> interview state machine are in place; async feedback reports are next.
+> contracts, auth, web shell, the live turn-based voice loop, the plan-driven
+> interview state machine, and the async scored feedback report (rubric radar +
+> transcript) are in place; the live coding round is next.
 
 ## Why this exists
 
@@ -131,7 +132,7 @@ pnpm dev                    # run the web app
 2. LiveKit token minting + room join + text echo agent (prove transport) ✅
 3. Real voice loop: turn-based push-to-talk, VAD → STT → LLM → TTS, reconnect handling ✅
 4. Interview state machine + tools + question bank + plan generation ✅
-5. End → async feedback report + rubric radar + transcript playback
+5. End → async feedback report + rubric radar + transcript playback ✅
 6. Coding round (Monaco + sandbox + `run_code`)
 7. Resume upload + RAG personalization
 8. Billing + entitlements, observability, evals, CI/CD, polish
