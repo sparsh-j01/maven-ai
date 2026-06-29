@@ -37,7 +37,7 @@ from livekit.agents import (
 from livekit import rtc
 from livekit.plugins import deepgram, google, silero
 
-from coding import LANGUAGE_IDS, TESTS, grade, run_on_judge0
+from coding import LANGUAGE_IDS, TESTS, expected_for, grade, run_on_judge0
 from plan_walker import PlanWalker
 from prompt_context import context_block
 
@@ -329,8 +329,9 @@ class InterviewAgent(Agent):
         self._runs += 1
 
         test = TESTS[self._coding_id]
+        expected = expected_for(self._coding_id)
         try:
-            result = await run_on_judge0(language, code, test["stdin"], test["expected"])
+            result = await run_on_judge0(language, code, test["stdin"])
         except Exception:
             logger.exception("judge0 run failed")
             return {"ok": False, "error": "sandbox unavailable"}
@@ -340,7 +341,7 @@ class InterviewAgent(Agent):
         status = (result.get("status") or {}).get("description", "")
         # Grade from the captured stdout ourselves so the verdict is independent of
         # Judge0's comparison mode; status is for the human-readable summary.
-        passed = grade(test["expected"], stdout)
+        passed = grade(expected, stdout)
         await self._persist_submission(language, code, stdout, passed)
         self._last_run = {"passed": passed, "status": status}
         logger.info("run_code passed=%s status=%s", passed, status)
