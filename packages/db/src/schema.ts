@@ -38,6 +38,7 @@ export const interviews = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     role: text("role").notNull(),
     company: text("company"),
+    companyType: text("company_type"), // product | service | startup — shifts difficulty + tone (§5)
     resumeText: text("resume_text"), // pasted resume — optional tailoring context (§5)
     jdText: text("jd_text"), // pasted job description — optional tailoring context
     seniority: text("seniority").notNull(), // intern | junior | mid | senior | sde1 | sde2 | sde3
