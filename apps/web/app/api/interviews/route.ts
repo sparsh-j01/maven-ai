@@ -1,8 +1,16 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { getDb, interviews, users } from "@maven-ai/db";
 import { companyType, seniority, interviewType } from "@maven-ai/shared";
+import { and, eq, gte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { personalizePlan } from "@/lib/personalize-plan";
+
+// Per-user creation cap (spend cap, §8.1): one account can't loop this endpoint
+// to burn plan-generation (Gemini) calls. Rolling 1-hour window, counted off the
+// (user_id, created_at) index. ponytail: a DB count, not Upstash — Postgres is
+// already required here; reach for @upstash/ratelimit only if you later need
+// sub-second or cross-region limiting.
+const MAX_INTERVIEWS_PER_HOUR = 10;
 
 // Setup-wizard input (milestone 4). role/seniority/type drive plan generation;
 // company is optional flavour the agent uses for its prompt. companyType shifts
@@ -32,6 +40,18 @@ export async function POST(req: Request) {
   const { role, company, companyType: coType, seniority: sen, type, resumeText, jdText } = parsed.data;
 
   const db = getDb();
+
+  // Rate limit before the metered plan-generation call below.
+  const since = new Date(Date.now() - 60 * 60 * 1000);
+  const [recent] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(interviews)
+    .where(and(eq(interviews.userId, userId), gte(interviews.createdAt, since)));
+  if ((recent?.count ?? 0) >= MAX_INTERVIEWS_PER_HOUR) {
+    return new Response("Too many interviews started — try again in a bit.", {
+      status: 429,
+    });
+  }
 
   // ponytail: mirror Clerk identity on first write. Replace with the Clerk
   // webhook sync when billing lands (milestone 8); upsert is fine until then.

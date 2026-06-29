@@ -124,8 +124,10 @@ pnpm dev                    # run the web app
 - **Sandboxed code execution** — the coding round runs untrusted code in an
   isolated sandbox with no network and hard CPU/memory/wall-clock limits, never
   in the agent process.
-- **Per-interview spend caps** — hard server-side limits on wall-clock, turns,
-  and idle time so one session cannot drain metered services.
+- **Spend caps** — every interview is hard-capped at 10 minutes of wall-clock
+  (the voice loop auto-ends and the room is torn down), the coding sandbox is
+  bounded per submission (25 runs, 20 KB), and interview creation is rate-limited
+  per user (10/hour) so one account cannot drain metered services.
 
 ## Roadmap
 
