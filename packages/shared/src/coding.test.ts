@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { seniority as seniorityEnum } from "./interview";
 import {
+  CODING_COUNT,
   CODING_PROBLEMS,
   getCodingProblem,
   LANGUAGES,
-  selectCodingProblem,
+  selectCodingProblems,
   STARTER_BY_LANGUAGE,
 } from "./coding";
 
@@ -22,7 +23,7 @@ describe("coding bank", () => {
     expect(getCodingProblem("nope")).toBeUndefined();
   });
 
-  it("selects a problem for every seniority, matching the difficulty band", () => {
+  it("always picks two distinct problems, leveled by seniority", () => {
     const wanted: Record<string, string> = {
       intern: "easy",
       junior: "easy",
@@ -33,13 +34,18 @@ describe("coding bank", () => {
       sde3: "hard",
     };
     for (const s of seniorityEnum.options) {
-      const p = selectCodingProblem(s);
-      expect(getCodingProblem(p.id)).toBeDefined();
-      expect(p.difficulty).toBe(wanted[s]);
+      const picked = selectCodingProblems(s);
+      // count is fixed (never scaled by seniority), and the two are distinct
+      expect(picked).toHaveLength(CODING_COUNT);
+      expect(new Set(picked.map((p) => p.id)).size).toBe(picked.length);
+      // both sit at the seniority's difficulty band (the bank has two each)
+      expect(picked.every((p) => p.difficulty === wanted[s])).toBe(true);
     }
   });
 
-  it("is deterministic — same seniority, same problem", () => {
-    expect(selectCodingProblem("mid").id).toBe(selectCodingProblem("mid").id);
+  it("is deterministic — same seniority, same problems", () => {
+    expect(selectCodingProblems("mid").map((p) => p.id)).toEqual(
+      selectCodingProblems("mid").map((p) => p.id),
+    );
   });
 });

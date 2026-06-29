@@ -1,4 +1,4 @@
-import { selectCodingProblem } from "./coding";
+import { type CodingProblem, selectCodingProblems } from "./coding";
 import type {
   Difficulty,
   InterviewPlan,
@@ -283,13 +283,12 @@ function roleMatches(tag: string, role: string): boolean {
   return role.toLowerCase().includes(tag.toLowerCase());
 }
 
-// The coding phase carries one PlannedQuestion built from a curated coding
-// problem (§4.2). The agent presents `prompt` and the candidate solves it in the
-// editor; the secret stdin/expected used to grade lives only with the grader
-// (apps/agent/coding.py), keyed by this id. Deterministic per seniority, so
-// buildPlan and assemblePlan agree.
-function codingQuestion(seniority: Seniority): PlannedQuestion {
-  const p = selectCodingProblem(seniority);
+// The coding phase carries two PlannedQuestions built from curated coding
+// problems (§4.2), both at the seniority's difficulty. The agent presents
+// `prompt` and the candidate solves it in the editor; the secret stdin/expected
+// used to grade lives only with the grader (apps/agent/coding.py), keyed by id.
+// Deterministic per seniority, so buildPlan and assemblePlan agree.
+function codingQuestion(p: CodingProblem): PlannedQuestion {
   return {
     id: p.id,
     prompt: p.prompt,
@@ -298,6 +297,10 @@ function codingQuestion(seniority: Seniority): PlannedQuestion {
     rubricHint:
       "A correct, efficient solution plus clear reasoning about the approach and complexity.",
   };
+}
+
+function codingQuestions(seniority: Seniority): PlannedQuestion[] {
+  return selectCodingProblems(seniority).map(codingQuestion);
 }
 
 function toPlanned(q: BankQuestion): PlannedQuestion {
@@ -373,7 +376,7 @@ export function buildPlan(input: PlanInput): InterviewPlan {
   const { role, seniority, type } = input;
   return {
     phases: PHASES_BY_TYPE[type].map((phase) => {
-      if (phase === "coding") return { phase, questions: [codingQuestion(seniority)] };
+      if (phase === "coding") return { phase, questions: codingQuestions(seniority) };
       const sel = SELECTABLE_OF[phase];
       return { phase, questions: sel ? select(sel, role, seniority, type) : [] };
     }),
@@ -417,7 +420,7 @@ export function assemblePlan(
   const { role, seniority, type } = input;
   return {
     phases: PHASES_BY_TYPE[type].map((phase) => {
-      if (phase === "coding") return { phase, questions: [codingQuestion(seniority)] };
+      if (phase === "coding") return { phase, questions: codingQuestions(seniority) };
       const sel = SELECTABLE_OF[phase];
       if (!sel) return { phase, questions: [] };
 

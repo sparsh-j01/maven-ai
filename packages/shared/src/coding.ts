@@ -63,15 +63,44 @@ export const CODING_PROBLEMS: CodingProblem[] = [
       "Read a single line containing a string. Print the length of the longest " +
       "substring that contains no repeating characters.",
   },
+  {
+    id: "c-vowel-count",
+    title: "Count the vowels",
+    difficulty: "easy",
+    prompt:
+      "Read a single line of text. Print the number of vowels (a, e, i, o, u, " +
+      "case-insensitive) it contains.",
+  },
+  {
+    id: "c-two-sum",
+    title: "Two sum exists",
+    difficulty: "medium",
+    prompt:
+      "The first line contains an integer N. The second line contains N " +
+      "space-separated integers. The third line contains a target integer. Print " +
+      "\"YES\" if any two distinct elements sum to the target, otherwise \"NO\".",
+  },
+  {
+    id: "c-lcs",
+    title: "Longest common subsequence",
+    difficulty: "hard",
+    prompt:
+      "Read two lines, each containing a string. Print the length of the longest " +
+      "common subsequence of the two strings.",
+  },
 ];
+
+// Every coding round is exactly two problems (architecture §4.2); seniority sets
+// their difficulty, not their count.
+export const CODING_COUNT = 2;
 
 export function getCodingProblem(id: string): CodingProblem | undefined {
   return CODING_PROBLEMS.find((p) => p.id === id);
 }
 
-// Pick a problem whose difficulty fits the seniority. Falls back to the first
-// problem so every seniority always gets one. Deterministic — buildPlan and
-// assemblePlan both rely on this giving the same problem for the same input.
+// Seniority raises the LEVEL of the coding round, not its size: the two problems
+// are drawn from this difficulty band. Mirrors the headline difficulty used for
+// the technical phase, so the coding round can't feel out of step with it.
 const DIFFICULTY_FOR: Record<Seniority, Difficulty> = {
   intern: "easy",
   junior: "easy",
@@ -82,9 +111,12 @@ const DIFFICULTY_FOR: Record<Seniority, Difficulty> = {
   sde3: "hard",
 };
 
-export function selectCodingProblem(seniority: Seniority): CodingProblem {
+// The two problems for a coding round: both at the seniority's difficulty, topped
+// up from the rest of the bank only if that band ever holds fewer than two.
+// Deterministic — buildPlan and assemblePlan both rely on the same result.
+export function selectCodingProblems(seniority: Seniority): CodingProblem[] {
   const want = DIFFICULTY_FOR[seniority];
-  return (
-    CODING_PROBLEMS.find((p) => p.difficulty === want) ?? CODING_PROBLEMS[0]!
-  );
+  const matching = CODING_PROBLEMS.filter((p) => p.difficulty === want);
+  const rest = CODING_PROBLEMS.filter((p) => p.difficulty !== want);
+  return [...matching, ...rest].slice(0, CODING_COUNT);
 }
