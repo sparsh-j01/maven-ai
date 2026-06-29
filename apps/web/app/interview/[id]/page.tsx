@@ -7,10 +7,29 @@ import {
   useTranscriptions,
   useVoiceAssistant,
 } from "@livekit/components-react";
+import { type CodingProblem, getCodingProblem } from "@maven-ai/shared";
 import { Room, RoomEvent } from "livekit-client";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { CodePanel } from "@/components/code-panel";
 import { Button } from "@/components/ui/button";
+
+// The coding problem rides to the client in room metadata (the public half only —
+// statement, no hidden tests). Pull it out so the editor can show it once the
+// agent reaches the coding phase.
+function codingProblemFromMetadata(meta?: string): CodingProblem | null {
+  if (!meta) return null;
+  try {
+    const phases = (JSON.parse(meta)?.plan?.phases ?? []) as {
+      phase: string;
+      questions: { id: string }[];
+    }[];
+    const id = phases.find((p) => p.phase === "coding")?.questions?.[0]?.id;
+    return id ? (getCodingProblem(id) ?? null) : null;
+  } catch {
+    return null;
+  }
+}
 
 type ConnState =
   | "checking-mic"
@@ -32,6 +51,8 @@ export default function InterviewRoomPage() {
   const [state, setState] = useState<ConnState>("checking-mic");
   const [detail, setDetail] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [phase, setPhase] = useState<string | null>(null);
+  const [codingProblem, setCodingProblem] = useState<CodingProblem | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,15 +65,22 @@ export default function InterviewRoomPage() {
       try {
         const msg = JSON.parse(new TextDecoder().decode(payload));
         if (msg?.type === "ended") setState("ended");
+        // The agent announces each phase so the editor shows for the coding round.
+        else if (msg?.type === "phase") setPhase(msg.phase ?? null);
       } catch {
         // not our message
       }
     };
+    // Room metadata carries the plan (with the coding problem). It's set at room
+    // creation, but listen too in case it arrives after connect.
+    const onMetadata = () =>
+      setCodingProblem(codingProblemFromMetadata(room.metadata));
     room
       .on(RoomEvent.Reconnecting, onReconnecting)
       .on(RoomEvent.Reconnected, onReconnected)
       .on(RoomEvent.Disconnected, onDisconnected)
-      .on(RoomEvent.DataReceived, onData);
+      .on(RoomEvent.DataReceived, onData)
+      .on(RoomEvent.RoomMetadataChanged, onMetadata);
 
     (async () => {
       // Mic pre-check (gated, §7.3): confirm permission before joining so the
@@ -83,6 +111,7 @@ export default function InterviewRoomPage() {
         };
         await room.connect(serverUrl, token);
         if (cancelled) return;
+        setCodingProblem(codingProblemFromMetadata(room.metadata));
         // Mic stays off until the candidate holds to talk (push-to-talk).
         await room.localParticipant.setMicrophoneEnabled(false);
         setState("live");
@@ -99,7 +128,8 @@ export default function InterviewRoomPage() {
         .off(RoomEvent.Reconnecting, onReconnecting)
         .off(RoomEvent.Reconnected, onReconnected)
         .off(RoomEvent.Disconnected, onDisconnected)
-        .off(RoomEvent.DataReceived, onData);
+        .off(RoomEvent.DataReceived, onData)
+        .off(RoomEvent.RoomMetadataChanged, onMetadata);
       void room.disconnect();
     };
   }, [id, room, attempt]);
@@ -132,7 +162,22 @@ export default function InterviewRoomPage() {
         ) : state === "mic-denied" ? (
           <MicDenied onRetry={() => setAttempt((a) => a + 1)} />
         ) : (
-          <VoiceRoom connecting={state !== "live" && state !== "reconnecting"} />
+          (() => {
+            const coding = phase === "coding" && !!codingProblem;
+            return (
+              <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+                <VoiceRoom
+                  connecting={state !== "live" && state !== "reconnecting"}
+                  compact={coding}
+                />
+                {coding && codingProblem ? (
+                  <div className="min-h-[320px] flex-1 md:w-1/2 md:min-h-0">
+                    <CodePanel room={room} problem={codingProblem} />
+                  </div>
+                ) : null}
+              </div>
+            );
+          })()
         )}
 
         {/* Plays the interviewer's TTS audio coming from the room. */}
@@ -142,7 +187,13 @@ export default function InterviewRoomPage() {
   );
 }
 
-function VoiceRoom({ connecting }: { connecting: boolean }) {
+function VoiceRoom({
+  connecting,
+  compact = false,
+}: {
+  connecting: boolean;
+  compact?: boolean;
+}) {
   const { state: agentState } = useVoiceAssistant();
   const { localParticipant } = useLocalParticipant();
   const transcriptions = useTranscriptions();
@@ -204,9 +255,15 @@ function VoiceRoom({ connecting }: { connecting: boolean }) {
           : "border-white/20";
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center px-6 py-10">
+    <div
+      className={`mx-auto flex w-full flex-1 flex-col items-center px-6 py-10 ${
+        compact ? "max-w-md" : "max-w-2xl"
+      }`}
+    >
       <div
-        className={`h-40 w-40 rounded-full border-2 transition-all duration-300 ${orb}`}
+        className={`rounded-full border-2 transition-all duration-300 ${
+          compact ? "h-24 w-24" : "h-40 w-40"
+        } ${orb}`}
         aria-hidden
       />
       <p className="mt-6 text-sm text-paper/70" aria-live="polite">
