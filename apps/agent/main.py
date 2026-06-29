@@ -46,6 +46,14 @@ from prompt_context import context_block
 MAX_CODE_BYTES = 20_000
 MAX_RUNS = 25
 
+# Hard wall-clock cap on the live voice loop (spend cap, §8.1): a single session
+# can't burn STT/LLM/TTS + SFU minutes past this, no matter what. The LiveKit
+# token TTL only governs JOIN; this bounds how long the candidate can stay once
+# in. The interview also ends naturally when the plan completes — this is the
+# ceiling, not the norm.
+MAX_SESSION_MIN = 10
+MAX_SESSION_SECONDS = MAX_SESSION_MIN * 60
+
 # Agent reads provider keys + LIVEKIT_* + DATABASE_URL from the repo-root .env
 # (the same values the web app uses).
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
@@ -190,6 +198,11 @@ class InterviewAgent(Agent):
         # report can order and (later) seek them. §2.2.
         self._start_ms = time.monotonic() * 1000
         self._last_offset = 0
+        # End-of-interview is idempotent: the LLM's end_interview tool and the
+        # hard time cap can race. _ended makes the second one a no-op; _cap_task
+        # is the timer, cancelled if the plan finishes first.
+        self._ended = False
+        self._cap_task: Optional[asyncio.Task] = None
 
     async def _publish(self, obj: dict) -> None:
         """Send a JSON control message to the room on the `maven` topic. Best-effort
@@ -401,10 +414,14 @@ class InterviewAgent(Agent):
             "Nudge the candidate to find the bug themselves — do not give the fix."
         )
 
-    @function_tool()
-    async def end_interview(self) -> str:
-        """End the interview. Call this only after you have delivered the closing
-        remarks and the plan is complete."""
+    async def _finalize(self, reason: str) -> None:
+        """Idempotent end-of-interview: mark the row `processing` (the async
+        scorer's trigger, §4.3) and tell the room so the UI flips to the report
+        (§7.4). Shared by the end_interview tool and the hard time cap; _ended
+        makes a race between the two a no-op the second time."""
+        if self._ended:
+            return
+        self._ended = True
         if self._db:
             try:
                 async with self._db_lock:
@@ -420,10 +437,19 @@ class InterviewAgent(Agent):
         # state and surface the report link (§7.4). Best-effort.
         await self._publish({"type": "ended"})
         logger.info(
-            "interview %s ended (%d signals logged)",
+            "interview %s ended (%s, %d signals logged)",
             self._interview_id,
+            reason,
             len(self._signals),
         )
+
+    @function_tool()
+    async def end_interview(self) -> str:
+        """End the interview. Call this only after you have delivered the closing
+        remarks and the plan is complete."""
+        if self._cap_task:
+            self._cap_task.cancel()  # plan finished before the cap — stand it down
+        await self._finalize("plan complete")
         # The report is generated asynchronously: status='processing' is the
         # trigger the scorer watches for, kicked when the report page opens (§4.3).
         return "Interview recorded. You can stop now."
@@ -531,6 +557,29 @@ async def entrypoint(ctx: JobContext) -> None:
     # Don't greet an empty room: the BFF pre-creates the room (with metadata), so
     # the agent can be dispatched before the candidate has joined.
     await ctx.wait_for_participant()
+
+    # Hard spend cap (§8.1): MAX_SESSION_MIN after the candidate joins, end the
+    # session no matter what so the voice loop can't burn provider minutes
+    # indefinitely. Cancelled in end_interview when the plan finishes first.
+    async def _enforce_time_cap() -> None:
+        try:
+            await asyncio.sleep(MAX_SESSION_SECONDS)
+        except asyncio.CancelledError:
+            return
+        logger.info("interview %s hit the %d-min cap — ending", interview_id, MAX_SESSION_MIN)
+        await agent._finalize("time cap")
+        await asyncio.sleep(0.5)  # let the reliable "ended" frame reach the browser
+        try:
+            await session.aclose()  # stop STT/LLM/TTS billing
+        except Exception:
+            logger.exception("session close on cap failed")
+        try:
+            await ctx.delete_room()  # disconnect + close the room (stops SFU minutes)
+        except Exception:
+            logger.exception("room delete on cap failed")
+
+    agent._cap_task = asyncio.create_task(_enforce_time_cap())
+
     await session.generate_reply(instructions=_opening(resuming))
 
 
