@@ -1,5 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import {
+  codeSubmissions,
   feedbackReports,
   getDb,
   interviews,
@@ -69,6 +70,20 @@ export default async function ReportPage({
     .from(interviewTurns)
     .where(eq(interviewTurns.interviewId, id))
     .orderBy(asc(interviewTurns.tsStartMs));
+
+  // Coding round submissions, oldest → newest; the last is the candidate's final
+  // attempt. The scorer already factored these in; this surfaces them.
+  const submissions = await db
+    .select({
+      language: codeSubmissions.language,
+      code: codeSubmissions.code,
+      execStdout: codeSubmissions.execStdout,
+      execPassed: codeSubmissions.execPassed,
+    })
+    .from(codeSubmissions)
+    .where(eq(codeSubmissions.interviewId, id))
+    .orderBy(asc(codeSubmissions.createdAt));
+  const lastSubmission = submissions.at(-1);
 
   // An interview that hasn't finished doesn't have a report yet — send the user
   // back to the room rather than showing an empty report.
@@ -150,6 +165,47 @@ export default async function ReportPage({
               <p className="mt-2 text-sm text-ink/70">{m.whatGreatLooksLike}</p>
             </Card>
           ))}
+        </section>
+      ) : null}
+
+      {/* Coding round — the candidate's final submission + the sandbox verdict. */}
+      {lastSubmission ? (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-xl font-semibold tracking-tight">Coding round</h2>
+          <Card className="flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-xs uppercase tracking-wide text-ink/50">
+                {lastSubmission.language}
+              </span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                  lastSubmission.execPassed
+                    ? "bg-teal/10 text-teal"
+                    : "bg-amber/10 text-amber"
+                }`}
+              >
+                {lastSubmission.execPassed ? "Passed" : "Did not pass"}
+              </span>
+              {submissions.length > 1 ? (
+                <span className="text-xs text-ink/40">
+                  {submissions.length} runs
+                </span>
+              ) : null}
+            </div>
+            <pre className="overflow-auto rounded-lg bg-ink/[0.03] p-4 font-mono text-[13px] leading-relaxed text-ink/90">
+              {lastSubmission.code}
+            </pre>
+            {lastSubmission.execStdout ? (
+              <div>
+                <span className="text-xs uppercase tracking-wide text-ink/40">
+                  Output
+                </span>
+                <pre className="mt-1 overflow-auto rounded-lg bg-ink/[0.03] p-3 font-mono text-xs text-ink/70">
+                  {lastSubmission.execStdout}
+                </pre>
+              </div>
+            ) : null}
+          </Card>
         </section>
       ) : null}
 
