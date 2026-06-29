@@ -1,11 +1,14 @@
 import { type CodingProblem, selectCodingProblems } from "./coding";
-import type {
-  Difficulty,
-  InterviewPlan,
-  InterviewType,
-  Phase,
-  PlannedQuestion,
-  Seniority,
+import {
+  companyDifficultyShift,
+  type CompanyType,
+  type Difficulty,
+  type InterviewPlan,
+  type InterviewType,
+  type Phase,
+  type PlannedQuestion,
+  type Seniority,
+  shiftDifficulty,
 } from "./interview";
 
 // Milestone 4: deterministic interview-plan generation from a curated, in-code
@@ -266,11 +269,25 @@ const TECH_DIFFICULTY: Record<Seniority, Difficulty[]> = {
   sde3: ["hard", "medium"],
 };
 
-// Headline difficulty shown to the candidate for a seniority: the band we prefer
-// when picking that level's technical questions. Derived from the same map that
-// drives selection, so the badge can't drift from the actual plan.
-export function seniorityDifficulty(s: Seniority): Difficulty {
-  return TECH_DIFFICULTY[s][0]!;
+// The preferred technical difficulties for a seniority, shifted by the target
+// company flavour (product harder, service easier). Dedup keeps it a clean
+// preference order after a shift collides two bands.
+function techOrder(
+  seniority: Seniority,
+  companyType?: CompanyType | null,
+): Difficulty[] {
+  const by = companyDifficultyShift(companyType);
+  return [...new Set(TECH_DIFFICULTY[seniority].map((d) => shiftDifficulty(d, by)))];
+}
+
+// Headline difficulty shown to the candidate: the band we prefer when picking
+// this level's technical questions, after the company shift. Derived from the
+// same order that drives selection, so the badge can't drift from the plan.
+export function seniorityDifficulty(
+  s: Seniority,
+  companyType?: CompanyType | null,
+): Difficulty {
+  return techOrder(s, companyType)[0]!;
 }
 
 function countFor(phase: SelectablePhase, type: InterviewType): number {
@@ -299,8 +316,11 @@ function codingQuestion(p: CodingProblem): PlannedQuestion {
   };
 }
 
-function codingQuestions(seniority: Seniority): PlannedQuestion[] {
-  return selectCodingProblems(seniority).map(codingQuestion);
+function codingQuestions(
+  seniority: Seniority,
+  companyType?: CompanyType | null,
+): PlannedQuestion[] {
+  return selectCodingProblems(seniority, companyType).map(codingQuestion);
 }
 
 function toPlanned(q: BankQuestion): PlannedQuestion {
@@ -322,6 +342,7 @@ function eligiblePool(
   role: string,
   seniority: Seniority,
   type: InterviewType,
+  companyType?: CompanyType | null,
 ): BankQuestion[] {
   const eligible = (q: BankQuestion) =>
     !q.roles || q.roles.some((r) => roleMatches(r, role));
@@ -335,9 +356,9 @@ function eligiblePool(
     pool =
       type === "system_design" ? pool.filter(isSD) : pool.filter((q) => !isSD(q));
 
-    // Prefer the seniority's difficulties (preferred first), keeping bank order
-    // within a tie. Fall back to the ungated pool if that left too few.
-    const order = TECH_DIFFICULTY[seniority];
+    // Prefer the seniority's difficulties (company-shifted, preferred first),
+    // keeping bank order within a tie. Fall back to the ungated pool if too few.
+    const order = techOrder(seniority, companyType);
     const gated = pool
       .filter((q) => order.includes(q.difficulty))
       .sort((a, b) => order.indexOf(a.difficulty) - order.indexOf(b.difficulty));
@@ -352,8 +373,9 @@ function select(
   role: string,
   seniority: Seniority,
   type: InterviewType,
+  companyType?: CompanyType | null,
 ): PlannedQuestion[] {
-  return eligiblePool(phase, role, seniority, type)
+  return eligiblePool(phase, role, seniority, type, companyType)
     .slice(0, countFor(phase, type))
     .map(toPlanned);
 }
@@ -366,19 +388,28 @@ const SELECTABLE_OF: Partial<Record<Phase, SelectablePhase>> = {
   behavioral: "behavioral",
 };
 
-type PlanInput = { role: string; seniority: Seniority; type: InterviewType };
+type PlanInput = {
+  role: string;
+  seniority: Seniority;
+  type: InterviewType;
+  companyType?: CompanyType | null;
+};
 
 // buildPlan — the phased, deterministic interview plan stored as
 // interviews.plan_json and walked by the agent's state machine (§2.3). The same
 // inputs always produce the same plan, which is what makes it testable. company
 // is interview flavour for the agent's prompt, not a selection input.
 export function buildPlan(input: PlanInput): InterviewPlan {
-  const { role, seniority, type } = input;
+  const { role, seniority, type, companyType } = input;
   return {
     phases: PHASES_BY_TYPE[type].map((phase) => {
-      if (phase === "coding") return { phase, questions: codingQuestions(seniority) };
+      if (phase === "coding")
+        return { phase, questions: codingQuestions(seniority, companyType) };
       const sel = SELECTABLE_OF[phase];
-      return { phase, questions: sel ? select(sel, role, seniority, type) : [] };
+      return {
+        phase,
+        questions: sel ? select(sel, role, seniority, type, companyType) : [],
+      };
     }),
   };
 }
@@ -393,7 +424,7 @@ export interface PlanCandidates {
 }
 
 export function planCandidates(input: PlanInput): PlanCandidates[] {
-  const { role, seniority, type } = input;
+  const { role, seniority, type, companyType } = input;
   const out: PlanCandidates[] = [];
   for (const phase of PHASES_BY_TYPE[type]) {
     const sel = SELECTABLE_OF[phase];
@@ -401,7 +432,7 @@ export function planCandidates(input: PlanInput): PlanCandidates[] {
     out.push({
       phase: sel,
       count: countFor(sel, type),
-      options: eligiblePool(sel, role, seniority, type).map(toPlanned),
+      options: eligiblePool(sel, role, seniority, type, companyType).map(toPlanned),
     });
   }
   return out;
@@ -417,14 +448,15 @@ export function assemblePlan(
   input: PlanInput,
   chosen: Record<string, string[]>,
 ): InterviewPlan {
-  const { role, seniority, type } = input;
+  const { role, seniority, type, companyType } = input;
   return {
     phases: PHASES_BY_TYPE[type].map((phase) => {
-      if (phase === "coding") return { phase, questions: codingQuestions(seniority) };
+      if (phase === "coding")
+        return { phase, questions: codingQuestions(seniority, companyType) };
       const sel = SELECTABLE_OF[phase];
       if (!sel) return { phase, questions: [] };
 
-      const pool = eligiblePool(sel, role, seniority, type);
+      const pool = eligiblePool(sel, role, seniority, type, companyType);
       const byId = new Map(pool.map((q) => [q.id, q]));
       const count = countFor(sel, type);
       const picked: BankQuestion[] = [];

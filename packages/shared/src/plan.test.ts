@@ -50,6 +50,25 @@ describe("buildPlan", () => {
     expect(codingDiffs("senior")).toEqual(["hard", "hard"]);
   });
 
+  it("shifts difficulty by target company type", () => {
+    // mid seniority is medium; product bumps the band up, service down — across
+    // both the coding round and the headline difficulty.
+    const codingDiffs = (companyType: "product" | "service") =>
+      phase(
+        buildPlan({ role: "X", seniority: "mid", type: "technical", companyType }),
+        "coding",
+      )!.questions.map((q) => q.difficulty);
+    expect(codingDiffs("product")).toEqual(["hard", "hard"]);
+    expect(codingDiffs("service")).toEqual(["easy", "easy"]);
+    // The headline badge (and the technical pool's preferred order it derives
+    // from) shifts with it. The technical bank is small, so the pool only re-leans
+    // when it holds enough at the shifted band — the coding round is where the
+    // shift always bites.
+    expect(seniorityDifficulty("mid", "product")).toBe("hard");
+    expect(seniorityDifficulty("mid", "service")).toBe("easy");
+    expect(seniorityDifficulty("mid")).toBe("medium");
+  });
+
   it("draws system-design questions only for the system_design type", () => {
     const sd = buildPlan({ role: "X", seniority: "senior", type: "system_design" });
     expect(phase(sd, "technical")!.questions.every((q) => /system design/i.test(q.competency))).toBe(true);
@@ -94,7 +113,18 @@ describe("assemblePlan / planCandidates (tier B personalization)", () => {
   const input = { role: "Backend Engineer", seniority: "mid", type: "mixed" } as const;
 
   it("with no choices, equals the deterministic plan", () => {
-    expect(assemblePlan(input, {})).toEqual(buildPlan(input));
+    // The coding phase is drawn at random per build, so compare it by difficulty
+    // (count + level) rather than exact ids; every other phase is deterministic.
+    const sansCodingIds = (p: ReturnType<typeof buildPlan>) => ({
+      phases: p.phases.map((ph) =>
+        ph.phase === "coding"
+          ? { phase: ph.phase, questions: ph.questions.map((q) => q.difficulty) }
+          : ph,
+      ),
+    });
+    expect(sansCodingIds(assemblePlan(input, {}))).toEqual(
+      sansCodingIds(buildPlan(input)),
+    );
   });
 
   it("honors a valid chosen order, capped at the phase count", () => {
