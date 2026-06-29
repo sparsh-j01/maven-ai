@@ -7,29 +7,12 @@ import {
   useTranscriptions,
   useVoiceAssistant,
 } from "@livekit/components-react";
-import { type CodingProblem, getCodingProblem } from "@maven-ai/shared";
+import { getCodingProblem } from "@maven-ai/shared";
 import { Room, RoomEvent } from "livekit-client";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { CodePanel } from "@/components/code-panel";
 import { Button } from "@/components/ui/button";
-
-// The coding problem rides to the client in room metadata (the public half only —
-// statement, no hidden tests). Pull it out so the editor can show it once the
-// agent reaches the coding phase.
-function codingProblemFromMetadata(meta?: string): CodingProblem | null {
-  if (!meta) return null;
-  try {
-    const phases = (JSON.parse(meta)?.plan?.phases ?? []) as {
-      phase: string;
-      questions: { id: string }[];
-    }[];
-    const id = phases.find((p) => p.phase === "coding")?.questions?.[0]?.id;
-    return id ? (getCodingProblem(id) ?? null) : null;
-  } catch {
-    return null;
-  }
-}
 
 type ConnState =
   | "checking-mic"
@@ -52,7 +35,12 @@ export default function InterviewRoomPage() {
   const [detail, setDetail] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [phase, setPhase] = useState<string | null>(null);
-  const [codingProblem, setCodingProblem] = useState<CodingProblem | null>(null);
+  // The agent names the active coding problem in its phase signal; look it up in
+  // the shared bank (public half only — no hidden tests reach the client).
+  const [codingProblemId, setCodingProblemId] = useState<string | null>(null);
+  const codingProblem = codingProblemId
+    ? (getCodingProblem(codingProblemId) ?? null)
+    : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -65,22 +53,22 @@ export default function InterviewRoomPage() {
       try {
         const msg = JSON.parse(new TextDecoder().decode(payload));
         if (msg?.type === "ended") setState("ended");
-        // The agent announces each phase so the editor shows for the coding round.
-        else if (msg?.type === "phase") setPhase(msg.phase ?? null);
+        else if (msg?.type === "phase") {
+          // The agent announces each phase (and the active problem) so the editor
+          // shows for the coding round and switches between the two problems.
+          setPhase(msg.phase ?? null);
+          if (msg.phase === "coding" && msg.problemId)
+            setCodingProblemId(msg.problemId);
+        }
       } catch {
         // not our message
       }
     };
-    // Room metadata carries the plan (with the coding problem). It's set at room
-    // creation, but listen too in case it arrives after connect.
-    const onMetadata = () =>
-      setCodingProblem(codingProblemFromMetadata(room.metadata));
     room
       .on(RoomEvent.Reconnecting, onReconnecting)
       .on(RoomEvent.Reconnected, onReconnected)
       .on(RoomEvent.Disconnected, onDisconnected)
-      .on(RoomEvent.DataReceived, onData)
-      .on(RoomEvent.RoomMetadataChanged, onMetadata);
+      .on(RoomEvent.DataReceived, onData);
 
     (async () => {
       // Mic pre-check (gated, §7.3): confirm permission before joining so the
@@ -111,7 +99,6 @@ export default function InterviewRoomPage() {
         };
         await room.connect(serverUrl, token);
         if (cancelled) return;
-        setCodingProblem(codingProblemFromMetadata(room.metadata));
         // Mic stays off until the candidate holds to talk (push-to-talk).
         await room.localParticipant.setMicrophoneEnabled(false);
         setState("live");
@@ -128,8 +115,7 @@ export default function InterviewRoomPage() {
         .off(RoomEvent.Reconnecting, onReconnecting)
         .off(RoomEvent.Reconnected, onReconnected)
         .off(RoomEvent.Disconnected, onDisconnected)
-        .off(RoomEvent.DataReceived, onData)
-        .off(RoomEvent.RoomMetadataChanged, onMetadata);
+        .off(RoomEvent.DataReceived, onData);
       void room.disconnect();
     };
   }, [id, room, attempt]);
@@ -172,7 +158,11 @@ export default function InterviewRoomPage() {
                 />
                 {coding && codingProblem ? (
                   <div className="min-h-[320px] flex-1 md:w-1/2 md:min-h-0">
-                    <CodePanel room={room} problem={codingProblem} />
+                    <CodePanel
+                      key={codingProblem.id}
+                      room={room}
+                      problem={codingProblem}
+                    />
                   </div>
                 ) : null}
               </div>
