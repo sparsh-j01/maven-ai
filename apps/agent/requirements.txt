@@ -5,3 +5,5 @@ python-dotenv>=1.0
 # Cursor persistence: the agent writes current_phase/plan_cursor to Postgres on
 # each transition so a restart resumes (architecture §2.3).
 asyncpg>=0.29
+# Coding round: POST candidate code to the Judge0 sandbox (architecture §4.2, §8).
+aiohttp>=3.9

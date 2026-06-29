@@ -37,8 +37,14 @@ from livekit.agents import (
 from livekit import rtc
 from livekit.plugins import deepgram, google, silero
 
+from coding import LANGUAGE_IDS, TESTS, grade, run_on_judge0
 from plan_walker import PlanWalker
 from prompt_context import context_block
+
+# Coding-round guards (F1/F3, §8.1): cap submission size and the number of runs
+# per interview so one session can't push huge payloads or hammer the sandbox.
+MAX_CODE_BYTES = 20_000
+MAX_RUNS = 25
 
 # Agent reads provider keys + LIVEKIT_* + DATABASE_URL from the repo-root .env
 # (the same values the web app uses).
@@ -147,6 +153,13 @@ class InterviewAgent(Agent):
         self._interview_id = interview_id
         self._room = room
         self._signals = []
+        # Coding round (§4.2): the active problem id (set when next_question serves
+        # the coding phase), the latest editor buffer the browser broadcasts over
+        # the data channel, the last run's outcome, and a per-interview run counter.
+        self._coding_id: Optional[str] = None
+        self._buffer = {"language": "python", "code": ""}
+        self._last_run: Optional[dict] = None
+        self._runs = 0
         # One asyncpg connection, several writers (cursor persist + turn inserts
         # fired from the session event handler can overlap). asyncpg can't run
         # concurrent queries on a connection, so serialize every DB write.
@@ -156,7 +169,20 @@ class InterviewAgent(Agent):
         self._start_ms = time.monotonic() * 1000
         self._last_offset = 0
 
+    async def _publish(self, obj: dict) -> None:
+        """Send a JSON control message to the room on the `maven` topic. Best-effort
+        — the UI updating must never block or break the interview."""
+        try:
+            await self._room.local_participant.publish_data(
+                json.dumps(obj), reliable=True, topic="maven"
+            )
+        except Exception:
+            logger.exception("data publish failed: %s", obj.get("type"))
+
     async def _persist_cursor(self) -> None:
+        # Tell the UI which phase we're in so it can show the code editor for the
+        # coding round and hide it otherwise (§7.4). Best-effort.
+        await self._publish({"type": "phase", "phase": self._walker.current_phase})
         if not self._db:
             return
         try:
@@ -209,6 +235,19 @@ class InterviewAgent(Agent):
                 "brief encouraging close, then call end_interview."
             )
         phase, q = item
+        if phase == "coding":
+            # The candidate solves this in the on-screen editor, not out loud.
+            self._coding_id = q["id"]
+            return (
+                "Coding round. Present this problem to the candidate and tell them "
+                "to write their solution in the code editor on their screen and "
+                "click Run when they're ready: "
+                f"{q['prompt']} "
+                "Do not dictate the code or give the algorithm away. When they say "
+                "they're ready (or after they run it), call run_code to execute "
+                "their solution, then discuss the result, their approach, and the "
+                "time and space complexity. Call next_question when you're done."
+            )
         hint = q.get("rubricHint")
         guidance = f" Privately assess for: {hint}" if hint else ""
         return (
@@ -246,6 +285,93 @@ class InterviewAgent(Agent):
         )
         return "Noted."
 
+    async def _persist_submission(
+        self, language: str, code: str, stdout: str, passed: bool
+    ) -> None:
+        if not self._db:
+            return
+        try:
+            async with self._db_lock:
+                await self._db.execute(
+                    "INSERT INTO code_submissions "
+                    "(interview_id, language, code, exec_stdout, exec_passed) "
+                    "VALUES ($1, $2, $3, $4, $5)",
+                    self._interview_id,
+                    language,
+                    code,
+                    stdout,
+                    passed,
+                )
+        except Exception:
+            logger.exception("code submission persist failed")
+
+    async def _run_code(self, language: str, code: str) -> dict:
+        """Execute the candidate's code in the Judge0 sandbox and grade it against
+        the active problem's hidden test (§4.2). Validates server-side (F1) and
+        caps runs per interview (F3). Persists the submission for the scorer.
+        Returns a result dict the caller publishes/returns; never raises."""
+        if not self._coding_id or self._coding_id not in TESTS:
+            return {"ok": False, "error": "no active coding problem"}
+        if language not in LANGUAGE_IDS:
+            return {"ok": False, "error": f"unsupported language: {language}"}
+        if not code.strip():
+            return {"ok": False, "error": "no code to run"}
+        if len(code.encode("utf-8")) > MAX_CODE_BYTES:
+            return {"ok": False, "error": "code too large"}
+        if self._runs >= MAX_RUNS:
+            return {"ok": False, "error": "run limit reached for this interview"}
+        self._runs += 1
+
+        test = TESTS[self._coding_id]
+        try:
+            result = await run_on_judge0(language, code, test["stdin"], test["expected"])
+        except Exception:
+            logger.exception("judge0 run failed")
+            return {"ok": False, "error": "sandbox unavailable"}
+
+        stdout = result.get("stdout") or ""
+        stderr = (result.get("stderr") or "") + (result.get("compile_output") or "")
+        status = (result.get("status") or {}).get("description", "")
+        # Grade from the captured stdout ourselves so the verdict is independent of
+        # Judge0's comparison mode; status is for the human-readable summary.
+        passed = grade(test["expected"], stdout)
+        await self._persist_submission(language, code, stdout, passed)
+        self._last_run = {"passed": passed, "status": status}
+        logger.info("run_code passed=%s status=%s", passed, status)
+        return {
+            "ok": True,
+            "passed": passed,
+            "stdout": stdout,
+            "stderr": stderr.strip(),
+            "status": status,
+        }
+
+    async def handle_run(self) -> None:
+        """Run the latest editor buffer because the candidate hit Run in the UI,
+        and publish the result strip back to them (§7.4)."""
+        res = await self._run_code(self._buffer["language"], self._buffer["code"])
+        await self._publish({"type": "run_result", **res})
+
+    @function_tool()
+    async def run_code(self) -> str:
+        """Run the candidate's current code from the on-screen editor in the secure
+        sandbox during the coding round, and return the pass/fail result so you can
+        react. Call this when the candidate says they're ready or asks you to run
+        it. Never invent a result — only report what this returns."""
+        res = await self._run_code(self._buffer["language"], self._buffer["code"])
+        await self._publish({"type": "run_result", **res})
+        if not res.get("ok"):
+            return f"Could not run the code ({res.get('error')}). Ask them to try again."
+        if res["passed"]:
+            return (
+                "The code ran and passed the test cases. Acknowledge briefly, then "
+                "ask about the time and space complexity or an edge case."
+            )
+        return (
+            f"The code ran but did not pass (status: {res['status'] or 'failed'}). "
+            "Nudge the candidate to find the bug themselves — do not give the fix."
+        )
+
     @function_tool()
     async def end_interview(self) -> str:
         """End the interview. Call this only after you have delivered the closing
@@ -263,12 +389,7 @@ class InterviewAgent(Agent):
                 logger.exception("end_interview persist failed")
         # Tell the room the interview is over so the UI can flip to the "ended"
         # state and surface the report link (§7.4). Best-effort.
-        try:
-            await self._room.local_participant.publish_data(
-                json.dumps({"type": "ended"}), reliable=True, topic="maven"
-            )
-        except Exception:
-            logger.exception("ended signal publish failed")
+        await self._publish({"type": "ended"})
         logger.info(
             "interview %s ended (%d signals logged)",
             self._interview_id,
@@ -346,6 +467,25 @@ async def entrypoint(ctx: JobContext) -> None:
         room=ctx.room,
     )
     session = _make_session()
+
+    # Coding round: the browser broadcasts the editor buffer and Run requests over
+    # the data channel (§4.2). The buffer is display/control data, never trusted as
+    # a control signal beyond what run_code re-validates server-side (F1, §8.1).
+    @ctx.room.on("data_received")
+    def _on_data(packet: rtc.DataPacket) -> None:
+        if packet.topic != "maven":
+            return
+        try:
+            msg = json.loads(packet.data.decode())
+        except (ValueError, UnicodeDecodeError):
+            return
+        if msg.get("type") == "code":
+            agent._buffer = {
+                "language": msg.get("language", "python"),
+                "code": msg.get("code", ""),
+            }
+        elif msg.get("type") == "run":
+            asyncio.create_task(agent.handle_run())
 
     # Persist every completed turn (both speakers) as it lands (§2.2). The handler
     # is sync; hand the DB write to the loop so it never blocks the voice pipeline.
