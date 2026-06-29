@@ -1,3 +1,4 @@
+import { selectCodingProblem } from "./coding";
 import type {
   Difficulty,
   InterviewPlan,
@@ -241,12 +242,14 @@ const BANK: BankQuestion[] = [
   },
 ];
 
-// Phase sequence per interview type. coding is milestone 6, so it's omitted from
-// generated plans for now; intro + wrap_up bracket every interview.
+// Phase sequence per interview type. intro + wrap_up bracket every interview. The
+// coding round follows the technical phase for technical/mixed (the types that
+// warrant writing code); behavioral has none, and system_design is a whiteboard
+// discussion, not a code-execution round.
 const PHASES_BY_TYPE: Record<InterviewType, Phase[]> = {
-  technical: ["intro", "warmup", "technical", "wrap_up"],
+  technical: ["intro", "warmup", "technical", "coding", "wrap_up"],
   behavioral: ["intro", "warmup", "behavioral", "wrap_up"],
-  mixed: ["intro", "warmup", "technical", "behavioral", "wrap_up"],
+  mixed: ["intro", "warmup", "technical", "coding", "behavioral", "wrap_up"],
   system_design: ["intro", "warmup", "technical", "wrap_up"],
 };
 
@@ -278,6 +281,23 @@ function countFor(phase: SelectablePhase, type: InterviewType): number {
 
 function roleMatches(tag: string, role: string): boolean {
   return role.toLowerCase().includes(tag.toLowerCase());
+}
+
+// The coding phase carries one PlannedQuestion built from a curated coding
+// problem (§4.2). The agent presents `prompt` and the candidate solves it in the
+// editor; the secret stdin/expected used to grade lives only with the grader
+// (apps/agent/coding.py), keyed by this id. Deterministic per seniority, so
+// buildPlan and assemblePlan agree.
+function codingQuestion(seniority: Seniority): PlannedQuestion {
+  const p = selectCodingProblem(seniority);
+  return {
+    id: p.id,
+    prompt: p.prompt,
+    competency: "problem solving",
+    difficulty: p.difficulty,
+    rubricHint:
+      "A correct, efficient solution plus clear reasoning about the approach and complexity.",
+  };
 }
 
 function toPlanned(q: BankQuestion): PlannedQuestion {
@@ -353,6 +373,7 @@ export function buildPlan(input: PlanInput): InterviewPlan {
   const { role, seniority, type } = input;
   return {
     phases: PHASES_BY_TYPE[type].map((phase) => {
+      if (phase === "coding") return { phase, questions: [codingQuestion(seniority)] };
       const sel = SELECTABLE_OF[phase];
       return { phase, questions: sel ? select(sel, role, seniority, type) : [] };
     }),
@@ -396,6 +417,7 @@ export function assemblePlan(
   const { role, seniority, type } = input;
   return {
     phases: PHASES_BY_TYPE[type].map((phase) => {
+      if (phase === "coding") return { phase, questions: [codingQuestion(seniority)] };
       const sel = SELECTABLE_OF[phase];
       if (!sel) return { phase, questions: [] };
 

@@ -32,6 +32,17 @@ describe("buildPlan", () => {
     expect(phase(mixed, "behavioral")!.questions.length).toBeGreaterThan(0);
   });
 
+  it("adds a coding round for technical/mixed but not behavioral/system_design", () => {
+    for (const type of ["technical", "mixed"] as const) {
+      const coding = phase(buildPlan({ role: "X", seniority: "mid", type }), "coding");
+      expect(coding!.questions).toHaveLength(1);
+      // the coding question references a real coding problem by id
+      expect(coding!.questions[0]!.id).toBe("c-max-subarray");
+    }
+    expect(phasesOf(buildPlan({ role: "X", seniority: "mid", type: "behavioral" }))).not.toContain("coding");
+    expect(phasesOf(buildPlan({ role: "X", seniority: "mid", type: "system_design" }))).not.toContain("coding");
+  });
+
   it("draws system-design questions only for the system_design type", () => {
     const sd = buildPlan({ role: "X", seniority: "senior", type: "system_design" });
     expect(phase(sd, "technical")!.questions.every((q) => /system design/i.test(q.competency))).toBe(true);
