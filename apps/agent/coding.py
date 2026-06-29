@@ -25,12 +25,18 @@ LANGUAGE_IDS = {
 # Secret graders, keyed by the problem id in packages/shared/src/coding.ts. One
 # representative stdin/expected per problem; the program reads stdin and prints.
 TESTS = {
+    # easy
     "c-fizzbuzz": {"stdin": "5\n", "expected": "1\n2\nFizz\n4\nBuzz\n"},
+    "c-vowel-count": {"stdin": "Hello World\n", "expected": "3\n"},
+    # medium
     "c-max-subarray": {
         "stdin": "9\n-2 1 -3 4 -1 2 1 -5 4\n",
         "expected": "6\n",
     },
+    "c-two-sum": {"stdin": "4\n2 7 11 15\n9\n", "expected": "YES\n"},
+    # hard
     "c-longest-unique": {"stdin": "abcabcbb\n", "expected": "3\n"},
+    "c-lcs": {"stdin": "abcde\nace\n", "expected": "3\n"},
 }
 
 
@@ -92,6 +98,13 @@ if __name__ == "__main__":
     assert not grade("3\n", "33\n")
     assert LANGUAGE_IDS["python"] == 71 and LANGUAGE_IDS["javascript"] == 63
     # every shared coding problem must have a secret grader
-    for pid in ("c-fizzbuzz", "c-max-subarray", "c-longest-unique"):
+    for pid in (
+        "c-fizzbuzz",
+        "c-vowel-count",
+        "c-max-subarray",
+        "c-two-sum",
+        "c-longest-unique",
+        "c-lcs",
+    ):
         assert pid in TESTS, pid
     print("ok — coding grade + tests")

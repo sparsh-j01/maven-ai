@@ -181,8 +181,12 @@ class InterviewAgent(Agent):
 
     async def _persist_cursor(self) -> None:
         # Tell the UI which phase we're in so it can show the code editor for the
-        # coding round and hide it otherwise (§7.4). Best-effort.
-        await self._publish({"type": "phase", "phase": self._walker.current_phase})
+        # coding round (and which problem is active, so it switches between the two)
+        # and hide it otherwise (§7.4). Best-effort.
+        msg = {"type": "phase", "phase": self._walker.current_phase}
+        if self._walker.current_phase == "coding" and self._coding_id:
+            msg["problemId"] = self._coding_id
+        await self._publish(msg)
         if not self._db:
             return
         try:
@@ -228,6 +232,9 @@ class InterviewAgent(Agent):
         to ask next, or a wrap-up signal when the plan is complete. Call this when
         you are ready to move on from the current topic."""
         item = self._walker.next()
+        # Track the active coding problem (cleared when we leave the coding phase)
+        # BEFORE persisting, so the phase signal carries the right problem id.
+        self._coding_id = item[1]["id"] if (item and item[0] == "coding") else None
         await self._persist_cursor()
         if item is None:
             return (
@@ -237,7 +244,6 @@ class InterviewAgent(Agent):
         phase, q = item
         if phase == "coding":
             # The candidate solves this in the on-screen editor, not out loud.
-            self._coding_id = q["id"]
             return (
                 "Coding round. Present this problem to the candidate and tell them "
                 "to write their solution in the code editor on their screen and "
