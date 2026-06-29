@@ -20,6 +20,12 @@ export const interviewType = z.enum([
 ]);
 export type InterviewType = z.infer<typeof interviewType>;
 
+// Optional target-company flavour. It shifts the difficulty band on top of
+// seniority (and colours the agent's tone): a product-based bar runs a notch
+// harder, a service-based bar a notch easier, a startup stays neutral.
+export const companyType = z.enum(["product", "service", "startup"]);
+export type CompanyType = z.infer<typeof companyType>;
+
 export const interviewStatus = z.enum([
   "provisioning",
   "live",
@@ -43,6 +49,26 @@ export const PHASE_ORDER: Phase[] = phase.options;
 
 export const difficulty = z.enum(["easy", "medium", "hard"]);
 export type Difficulty = z.infer<typeof difficulty>;
+
+// Ascending difficulty, so a band can be shifted by integer steps.
+export const DIFFICULTY_ORDER: Difficulty[] = difficulty.options;
+
+// Clamp a difficulty up/down by `steps` (e.g. company flavour: +1 product,
+// −1 service). Stays within [easy, hard].
+export function shiftDifficulty(d: Difficulty, steps: number): Difficulty {
+  const i = DIFFICULTY_ORDER.indexOf(d) + steps;
+  return DIFFICULTY_ORDER[Math.max(0, Math.min(DIFFICULTY_ORDER.length - 1, i))]!;
+}
+
+// How far a target-company type moves the difficulty band. Undefined → no shift.
+const COMPANY_SHIFT: Record<CompanyType, number> = {
+  product: 1, // product-based: a higher technical bar
+  service: -1, // service-based: fundamentals and breadth, gentler bar
+  startup: 0, // pragmatic, middle of the road
+};
+export function companyDifficultyShift(c?: CompanyType | null): number {
+  return c ? COMPANY_SHIFT[c] : 0;
+}
 
 export const speaker = z.enum(["candidate", "interviewer"]);
 export type Speaker = z.infer<typeof speaker>;
