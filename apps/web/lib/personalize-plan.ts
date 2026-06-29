@@ -1,4 +1,5 @@
 import type {
+  CompanyType,
   InterviewPlan,
   InterviewType,
   PlanCandidates,
@@ -25,6 +26,7 @@ type Input = {
   seniority: Seniority;
   type: InterviewType;
   company?: string | null;
+  companyType?: CompanyType | null;
   resumeText?: string | null;
   jdText?: string | null;
 };
@@ -68,7 +70,16 @@ async function chooseWithGemini(
     .filter(Boolean)
     .join("\n");
 
-  const prompt = `You are assembling a mock-interview question plan for a ${input.seniority} ${input.role}${input.company ? ` (target company: ${input.company})` : ""}.
+  const companyTypeHint: Record<CompanyType, string> = {
+    product: "a product-based company (raise the bar — favour the harder, more algorithmic options)",
+    service: "a service-based company (favour breadth and the more approachable options)",
+    startup: "a startup (favour pragmatic, build-fast options)",
+  };
+  const target = input.companyType
+    ? ` targeting ${companyTypeHint[input.companyType]}`
+    : "";
+
+  const prompt = `You are assembling a mock-interview question plan for a ${input.seniority} ${input.role}${input.company ? ` (target company: ${input.company})` : ""}${target}.
 
 From each phase's options below, choose the question ids that best fit THIS candidate's background and the target role. Choose exactly the requested count per phase, by id, ordered best-first. Only use ids listed under that phase; never invent ids or questions.
 

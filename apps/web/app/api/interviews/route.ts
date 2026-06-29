@@ -1,14 +1,17 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { getDb, interviews, users } from "@maven-ai/db";
-import { seniority, interviewType } from "@maven-ai/shared";
+import { companyType, seniority, interviewType } from "@maven-ai/shared";
 import { z } from "zod";
 import { personalizePlan } from "@/lib/personalize-plan";
 
 // Setup-wizard input (milestone 4). role/seniority/type drive plan generation;
-// company is optional flavour the agent uses for its prompt, not for selection.
+// company is optional flavour the agent uses for its prompt. companyType shifts
+// the difficulty band (product harder / service easier / startup neutral) and the
+// agent's tone.
 const createInput = z.object({
   role: z.string().trim().min(1).max(100),
   company: z.string().trim().max(100).optional(),
+  companyType: companyType.optional(),
   seniority,
   type: interviewType,
   // Optional pasted tailoring context. Capped here to bound prompt size and the
@@ -26,7 +29,7 @@ export async function POST(req: Request) {
 
   const parsed = createInput.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return new Response("Invalid interview setup", { status: 400 });
-  const { role, company, seniority: sen, type, resumeText, jdText } = parsed.data;
+  const { role, company, companyType: coType, seniority: sen, type, resumeText, jdText } = parsed.data;
 
   const db = getDb();
 
@@ -45,6 +48,7 @@ export async function POST(req: Request) {
     seniority: sen,
     type,
     company,
+    companyType: coType,
     resumeText,
     jdText,
   });
@@ -55,6 +59,7 @@ export async function POST(req: Request) {
       userId,
       role,
       company: company || null,
+      companyType: coType || null,
       seniority: sen,
       type,
       resumeText: resumeText || null,

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  type CompanyType,
   type Difficulty,
   type InterviewType,
   type Seniority,
@@ -47,6 +48,14 @@ const TYPES: { value: InterviewType; label: string }[] = [
   { value: "system_design", label: "System design" },
 ];
 
+// Optional target-company lever — shifts the difficulty band (product harder,
+// service easier, startup neutral) and colours the agent's tone (§5).
+const COMPANY_TYPES: { value: CompanyType; label: string }[] = [
+  { value: "product", label: "Product-based" },
+  { value: "service", label: "Service-based" },
+  { value: "startup", label: "Startup" },
+];
+
 const field =
   "h-10 w-full rounded border border-ink/15 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-teal";
 const area =
@@ -60,6 +69,7 @@ export default function NewInterviewPage() {
   const [jd, setJd] = useState("");
   const [seniority, setSeniority] = useState<Seniority>("mid");
   const [type, setType] = useState<InterviewType>("mixed");
+  const [companyTypeSel, setCompanyTypeSel] = useState<CompanyType | "">("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,6 +83,7 @@ export default function NewInterviewPage() {
         body: JSON.stringify({
           role: role.trim(),
           company: company.trim() || undefined,
+          companyType: companyTypeSel || undefined,
           seniority,
           type,
           resumeText: resume.trim() || undefined,
@@ -132,6 +143,24 @@ export default function NewInterviewPage() {
               value={company}
               onChange={(e) => setCompany(e.target.value)}
             />
+          </label>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium">
+              Target company type <span className="text-ink/40">(optional)</span>
+            </span>
+            <select
+              className={field}
+              value={companyTypeSel}
+              onChange={(e) => setCompanyTypeSel(e.target.value as CompanyType | "")}
+            >
+              <option value="">No preference</option>
+              {COMPANY_TYPES.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label className="flex flex-col gap-1.5">
@@ -197,7 +226,7 @@ export default function NewInterviewPage() {
           <p className="text-xs text-ink/60">
             This interview will be{" "}
             <span className="font-medium text-ink">
-              {DIFFICULTY_LABEL[seniorityDifficulty(seniority)]}
+              {DIFFICULTY_LABEL[seniorityDifficulty(seniority, companyTypeSel || undefined)]}
             </span>
             .
           </p>

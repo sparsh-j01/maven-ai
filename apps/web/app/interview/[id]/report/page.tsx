@@ -46,6 +46,7 @@ export default async function ReportPage({
     .select({
       role: interviews.role,
       company: interviews.company,
+      companyType: interviews.companyType,
       seniority: interviews.seniority,
       type: interviews.type,
       status: interviews.status,
@@ -250,12 +251,20 @@ export default async function ReportPage({
   );
 }
 
+const COMPANY_TYPE_LABEL: Record<string, string> = {
+  product: "product-based",
+  service: "service-based",
+  startup: "startup",
+};
+
 function subtitle(iv: {
   seniority: string;
   type: string;
   company: string | null;
+  companyType: string | null;
 }) {
-  return `${iv.seniority} · ${iv.type}${iv.company ? ` · ${iv.company}` : ""}`;
+  const ct = iv.companyType ? ` · ${COMPANY_TYPE_LABEL[iv.companyType] ?? iv.companyType}` : "";
+  return `${iv.seniority} · ${iv.type}${iv.company ? ` · ${iv.company}` : ""}${ct}`;
 }
 
 function Shell({
