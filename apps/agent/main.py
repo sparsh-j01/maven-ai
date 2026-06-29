@@ -98,6 +98,28 @@ def _role_line(meta: dict) -> str:
     return f"{seniority} {role}{suffix}".strip()
 
 
+# The target-company flavour colours the interviewer's tone (the difficulty itself
+# is already baked into the plan). Empty for an unset/unknown type.
+_COMPANY_TONE = {
+    "product": (
+        " This is a product-based-company interview: hold a high technical bar, "
+        "probe depth and trade-offs, and expect crisp, rigorous answers."
+    ),
+    "service": (
+        " This is a service-based-company interview: focus on fundamentals, "
+        "breadth, and clear communication; keep a supportive, encouraging bar."
+    ),
+    "startup": (
+        " This is a startup interview: be pragmatic and fast-paced, favouring "
+        "practical problem-solving and scrappy, get-it-done thinking over theory."
+    ),
+}
+
+
+def _company_tone(meta: dict) -> str:
+    return _COMPANY_TONE.get(meta.get("companyType") or "", "")
+
+
 def _instructions(meta: dict) -> str:
     return f"""\
 You are a professional, warm but rigorous interviewer conducting a live, spoken \
@@ -119,7 +141,7 @@ may press once or twice. If it is solid, acknowledge briefly and continue. Never
 affirm an incorrect claim and never give away the answer.
 - When you are ready for the next topic, call next_question again. When it says \
 the plan is complete, thank the candidate, give a brief encouraging close, then \
-call end_interview.""" + context_block(meta)
+call end_interview.""" + _company_tone(meta) + context_block(meta)
 
 
 def _opening(resuming: bool) -> str:
