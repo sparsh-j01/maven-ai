@@ -131,11 +131,11 @@ pnpm dev                    # run the web app
 
 ## Roadmap
 
-1. Monorepo scaffold, DB schema, auth, dashboard shell ✅
-2. LiveKit token minting + room join + text echo agent (prove transport) ✅
-3. Real voice loop: turn-based push-to-talk, VAD → STT → LLM → TTS, reconnect handling ✅
-4. Interview state machine + tools + question bank + plan generation ✅
-5. End → async feedback report + rubric radar + transcript playback ✅
-6. Coding round (Monaco + sandbox + `run_code`) ✅
+1. Monorepo scaffold, DB schema, auth, dashboard shell 
+2. LiveKit token minting + room join + text echo agent (prove transport) 
+3. Real voice loop: turn-based push-to-talk, VAD → STT → LLM → TTS, reconnect handling 
+4. Interview state machine + tools + question bank + plan generation 
+5. End → async feedback report + rubric radar + transcript playback 
+6. Coding round (Monaco + sandbox + `run_code`) 
 7. Resume upload + RAG personalization
 8. Billing + entitlements, observability, evals, CI/CD, polish
