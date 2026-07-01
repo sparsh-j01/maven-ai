@@ -11,6 +11,7 @@
     "generate": "drizzle-kit generate",
     "migrate": "drizzle-kit migrate",
     "push": "drizzle-kit push",
+    "seed": "tsx --env-file=.env scripts/seed-questions.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -21,6 +22,7 @@
   "devDependencies": {
     "@types/node": "^22.10.2",
     "drizzle-kit": "^0.30.1",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
 }
