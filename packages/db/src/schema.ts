@@ -77,6 +77,7 @@ export const questions = pgTable(
   "questions",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    slug: text("slug").notNull().unique(), // stable bank id (e.g. "t-hashmap") — links a row to its in-code question and grounds the assembler
     role: text("role").notNull(),
     competency: text("competency").notNull(),
     difficulty: text("difficulty").notNull(), // easy | medium | hard
@@ -101,6 +102,7 @@ export const resumes = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     fileUrl: text("file_url").notNull(), // R2 object
+    fileSize: integer("file_size"), // bytes stored — summed to enforce the storage cap
     parsedJson: jsonb("parsed_json"), // structured skills/experience
     embedding: vector("embedding", { dimensions: EMBED_DIMS }),
     createdAt: ts("created_at").defaultNow(),

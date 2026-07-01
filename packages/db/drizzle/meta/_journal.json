@@ -15,6 +15,13 @@
       "when": 1782612514923,
       "tag": "0001_ambiguous_warlock",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782924671642,
+      "tag": "0002_loose_black_tom",
+      "breakpoints": true
     }
   ]
 }
