@@ -37,3 +37,4 @@ venv/
 .vercel
 .idea/
 .vscode/
+.gstack/
