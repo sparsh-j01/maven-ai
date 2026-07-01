@@ -4,6 +4,7 @@ import {
   assemblePlan,
   buildPlan,
   planCandidates,
+  rerankCandidates,
   seniorityDifficulty,
 } from "./plan";
 
@@ -155,5 +156,36 @@ describe("assemblePlan / planCandidates (tier B personalization)", () => {
       expect(c.options.length).toBeGreaterThanOrEqual(1);
       expect(c.count).toBeGreaterThanOrEqual(1);
     }
+  });
+});
+
+describe("rerankCandidates (RAG retrieval ordering)", () => {
+  const input = { role: "Backend Engineer", seniority: "mid", type: "technical" } as const;
+
+  it("moves ranked ids to the front, ranked order first", () => {
+    const tech = planCandidates(input).find((c) => c.phase === "technical")!;
+    const last = tech.options.at(-1)!.id;
+    const order = [last]; // pretend retrieval ranked the last option most similar
+    const reranked = rerankCandidates(planCandidates(input), order).find(
+      (c) => c.phase === "technical",
+    )!;
+    expect(reranked.options[0]!.id).toBe(last);
+  });
+
+  it("never adds, drops, or duplicates an option (stays grounded)", () => {
+    const before = planCandidates(input);
+    const after = rerankCandidates(before, ["t-cache", "nope"]); // one real, one bogus
+    for (let i = 0; i < before.length; i++) {
+      const a = new Set(after[i]!.options.map((o) => o.id));
+      const b = new Set(before[i]!.options.map((o) => o.id));
+      expect(a).toEqual(b);
+      expect(after[i]!.options.length).toBe(before[i]!.options.length);
+    }
+  });
+
+  it("preserves original order for unranked options (stable)", () => {
+    const before = planCandidates(input);
+    const after = rerankCandidates(before, []); // empty ranking → unchanged
+    expect(after).toEqual(before);
   });
 });

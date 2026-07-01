@@ -438,6 +438,54 @@ export function planCandidates(input: PlanInput): PlanCandidates[] {
   return out;
 }
 
+// rerankCandidates — reorder each phase's options so the ids in `order`
+// (best-first, e.g. from a pgvector résumé-similarity query) come first, ties
+// and unranked options keeping their original relative order. Pure so it's unit
+// testable; the RAG retrieval (web) does the DB/embedding I/O and calls this.
+// Reorders only — never adds or drops an option — so the plan stays grounded in
+// the curated bank regardless of what retrieval returns.
+export function rerankCandidates(
+  candidates: PlanCandidates[],
+  order: string[],
+): PlanCandidates[] {
+  const rank = new Map(order.map((id, i) => [id, i]));
+  const unranked = order.length + 1;
+  return candidates.map((c) => ({
+    ...c,
+    options: c.options
+      .map((o, i) => ({ o, i }))
+      .sort(
+        (a, b) =>
+          (rank.get(a.o.id) ?? unranked) - (rank.get(b.o.id) ?? unranked) ||
+          a.i - b.i,
+      )
+      .map((x) => x.o),
+  }));
+}
+
+// The curated bank flattened for seeding the `questions` Postgres table (slug =
+// the in-code id). The bank stays the source of truth in code; the table is its
+// embedded mirror for pgvector retrieval (milestone 7).
+export interface SeedQuestion {
+  slug: string;
+  role: string;
+  competency: string;
+  difficulty: Difficulty;
+  prompt: string;
+  rubricHint?: string;
+}
+
+export function bankForSeeding(): SeedQuestion[] {
+  return BANK.map((q) => ({
+    slug: q.id,
+    role: q.roles?.join("/") ?? "general",
+    competency: q.competency,
+    difficulty: q.difficulty,
+    prompt: q.prompt,
+    ...(q.rubricHint ? { rubricHint: q.rubricHint } : {}),
+  }));
+}
+
 // assemblePlan — build a plan from a personalizer's chosen question ids. Each
 // phase is filled ONLY from its eligible bank pool: chosen ids are kept in the
 // given order (deduped; unknown, foreign-phase, or invalid ids dropped), then
