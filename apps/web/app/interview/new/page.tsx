@@ -71,7 +71,36 @@ export default function NewInterviewPage() {
   const [type, setType] = useState<InterviewType>("mixed");
   const [companyTypeSel, setCompanyTypeSel] = useState<CompanyType | "">("");
   const [loading, setLoading] = useState(false);
+  const [parsing, setParsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Upload a résumé PDF → extract its text server-side → drop it into the résumé
+  // field, where it flows through the same tailoring path as pasted text.
+  async function onResumeFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // let the same file be re-selected after an edit
+    if (!file) return;
+    setParsing(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/resumes/parse", { method: "POST", body: fd });
+      if (!res.ok) {
+        // Surface the route's plain-text message; never dump an HTML 500 page.
+        const msg = res.headers.get("content-type")?.startsWith("text/plain")
+          ? (await res.text()).slice(0, 200)
+          : "";
+        throw new Error(msg || "Couldn't read that PDF");
+      }
+      const { text } = (await res.json()) as { text: string };
+      setResume(text);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't read that PDF");
+    } finally {
+      setParsing(false);
+    }
+  }
 
   async function start() {
     setLoading(true);
@@ -164,14 +193,26 @@ export default function NewInterviewPage() {
           </label>
 
           <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">
-              Resume <span className="text-ink/40">(optional)</span>
+            <span className="flex items-center justify-between text-sm font-medium">
+              <span>
+                Resume <span className="text-ink/40">(optional)</span>
+              </span>
+              <span className="cursor-pointer text-xs font-normal text-teal hover:underline">
+                {parsing ? "Reading PDF…" : "Upload PDF (max 3MB)"}
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  className="sr-only"
+                  disabled={parsing}
+                  onChange={onResumeFile}
+                />
+              </span>
             </span>
             <textarea
               className={area}
               rows={4}
               maxLength={10000}
-              placeholder="Paste your resume — we'll tailor questions to your background."
+              placeholder="Paste your resume, or upload a PDF — we'll tailor questions to your background."
               value={resume}
               onChange={(e) => setResume(e.target.value)}
             />
