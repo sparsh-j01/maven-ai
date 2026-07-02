@@ -8,7 +8,7 @@ import {
 import {
   buildScorerPrompt,
   feedbackReport,
-  RUBRIC_DIMENSIONS,
+  feedbackResponseSchema,
   SCORER_SYSTEM,
   type FeedbackReport,
   type InterviewType,
@@ -21,45 +21,6 @@ import { inngest } from "./inngest";
 
 const MODEL = "gemini-2.5-flash";
 const TIMEOUT_MS = 30_000;
-
-// JSON-schema mirror of feedbackReport (§4.3) — constrains Gemini's structured
-// output so it can't free-text around the rubric. Built from the locked rubric
-// dimensions so the schema and the report shape can't drift.
-const responseSchema = {
-  type: "object",
-  properties: {
-    overallScore: { type: "number" },
-    rubricScores: {
-      type: "object",
-      properties: Object.fromEntries(
-        RUBRIC_DIMENSIONS.map((d) => [d, { type: "number" }]),
-      ),
-      required: [...RUBRIC_DIMENSIONS],
-    },
-    summary: { type: "string" },
-    strengths: { type: "array", items: { type: "string" } },
-    gaps: { type: "array", items: { type: "string" } },
-    modelAnswers: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          question: { type: "string" },
-          whatGreatLooksLike: { type: "string" },
-        },
-        required: ["question", "whatGreatLooksLike"],
-      },
-    },
-  },
-  required: [
-    "overallScore",
-    "rubricScores",
-    "summary",
-    "strengths",
-    "gaps",
-    "modelAnswers",
-  ],
-};
 
 type Loaded = { hasReport: boolean; input: ScorerInput };
 
@@ -131,7 +92,7 @@ async function gradeWithGemini(input: ScorerInput): Promise<FeedbackReport> {
     generationConfig: {
       temperature: 0.2,
       responseMimeType: "application/json",
-      responseSchema,
+      responseSchema: feedbackResponseSchema,
     },
   };
 

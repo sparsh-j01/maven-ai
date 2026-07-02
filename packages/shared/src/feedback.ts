@@ -89,3 +89,43 @@ Score each rubric dimension from 0 to 10 (${dims}) and an overall score from 0 t
 
 Base every score and claim only on what the candidate actually said above.`;
 }
+
+// JSON-schema mirror of feedbackReport — constrains the grader's structured
+// output so it can't free-text around the rubric. Built from the locked rubric
+// dimensions so the schema and the zod shape can't drift. Shared by the async
+// scorer (apps/web) and the eval harness (packages/evals).
+export const feedbackResponseSchema = {
+  type: "object",
+  properties: {
+    overallScore: { type: "number" },
+    rubricScores: {
+      type: "object",
+      properties: Object.fromEntries(
+        RUBRIC_DIMENSIONS.map((d) => [d, { type: "number" }]),
+      ),
+      required: [...RUBRIC_DIMENSIONS],
+    },
+    summary: { type: "string" },
+    strengths: { type: "array", items: { type: "string" } },
+    gaps: { type: "array", items: { type: "string" } },
+    modelAnswers: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          question: { type: "string" },
+          whatGreatLooksLike: { type: "string" },
+        },
+        required: ["question", "whatGreatLooksLike"],
+      },
+    },
+  },
+  required: [
+    "overallScore",
+    "rubricScores",
+    "summary",
+    "strengths",
+    "gaps",
+    "modelAnswers",
+  ],
+} as const;
