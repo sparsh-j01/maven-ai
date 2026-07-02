@@ -7,3 +7,7 @@ python-dotenv>=1.0
 asyncpg>=0.29
 # Coding round: POST candidate code to the Judge0 sandbox (architecture §4.2, §8).
 aiohttp>=3.9
+# Observability (milestone 8): LiveKit emits OpenTelemetry spans per session; we
+# export them to Langfuse's OTLP endpoint for LLM tracing. See telemetry.py.
+opentelemetry-sdk>=1.27
+opentelemetry-exporter-otlp-proto-http>=1.27

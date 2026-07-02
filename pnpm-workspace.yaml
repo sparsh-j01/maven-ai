@@ -3,6 +3,9 @@ packages:
   - "packages/*"
 allowBuilds:
   '@clerk/shared': true
+  # @sentry/cli's postinstall only fetches the source-map-upload binary, which we
+  # don't use (no Sentry build plugin). Skip it so install exits 0.
+  '@sentry/cli': false
   esbuild: true
   protobufjs: true
   sharp: true
