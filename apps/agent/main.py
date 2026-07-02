@@ -40,6 +40,7 @@ from livekit.plugins import deepgram, google, silero
 from coding import LANGUAGE_IDS, TESTS, expected_for, grade, run_on_judge0
 from plan_walker import PlanWalker
 from prompt_context import context_block
+from telemetry import setup_langfuse
 
 # Coding-round guards (F1/F3, §8.1): cap submission size and the number of runs
 # per interview so one session can't push huge payloads or hammer the sandbox.
@@ -483,6 +484,7 @@ async def _read_cursor(db: Optional[asyncpg.Connection], interview_id: uuid.UUID
 
 
 async def entrypoint(ctx: JobContext) -> None:
+    setup_langfuse()  # export session traces to Langfuse (no-op if unconfigured)
     await ctx.connect()
     logger.info("interviewer joined room %s", ctx.room.name)
 
