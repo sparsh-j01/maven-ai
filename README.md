@@ -138,4 +138,5 @@ pnpm dev                    # run the web app
 5. End → async feedback report + rubric radar + transcript playback 
 6. Coding round (Monaco + sandbox + `run_code`) 
 7. Resume upload + RAG personalization
-8. Billing + entitlements, observability, evals, CI/CD, polish
+8. Billing + entitlements, observability, evals, CI/CD
+9. UI/UX polish (loading skeletons, transitions, empty/error states)
