@@ -8,8 +8,10 @@ transcript.
 > **Status:** in active development. The monorepo, database schema, shared
 > contracts, auth, web shell, the live turn-based voice loop, the plan-driven
 > interview state machine, the async scored feedback report (rubric radar +
-> transcript), and the live coding round (Monaco + Judge0 sandbox) are in place;
-> resume-driven RAG personalization is next.
+> transcript), the live coding round (Monaco + Judge0 sandbox), resume-driven
+> RAG personalization, and Stripe billing + plan entitlements (with Sentry +
+> Langfuse observability, a scorer eval harness, and CI) are in place;
+> UI/UX polish is next.
 
 ## Why this exists
 
@@ -86,6 +88,7 @@ apps/
 packages/
   db/         Drizzle schema + migrations (Postgres + pgvector)
   shared/     shared TypeScript types + zod schemas (rubric, interview plan)
+  evals/      golden-transcript eval harness for the feedback scorer
 infra/
   db/         local Postgres init (enables pgvector)
 ```
@@ -112,6 +115,7 @@ pnpm dev                    # run the web app
 | `pnpm build` | Build all packages |
 | `pnpm lint` / `pnpm typecheck` | Lint / type-check |
 | `pnpm test` | Run tests (vitest) |
+| `pnpm eval` | Grade golden transcripts through the scorer (offline without `GOOGLE_API_KEY`) |
 | `pnpm db:generate` | Generate SQL migrations from the schema |
 | `pnpm db:push` | Push the schema straight to the database |
 
