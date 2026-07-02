@@ -92,7 +92,7 @@ infra/
 
 ## Getting started
 
-**Requirements:** Node 20+, pnpm 11, Docker (for local Postgres/Redis).
+**Requirements:** Node 22.13+ (pnpm 11 needs it), pnpm 11, Docker (for local Postgres/Redis).
 
 ```bash
 pnpm install

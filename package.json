@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@11.1.3",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
   "scripts": {
     "bootstrap": "cp -n .env.example .env; ln -sf ../../.env apps/web/.env; ln -sf ../../.env packages/db/.env",
