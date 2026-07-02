@@ -1,6 +1,12 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { getDb, interviews, users } from "@maven-ai/db";
-import { companyType, seniority, interviewType } from "@maven-ai/shared";
+import {
+  companyType,
+  interviewType,
+  monthStart,
+  monthlyInterviewLimit,
+  seniority,
+} from "@maven-ai/shared";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { personalizePlan } from "@/lib/personalize-plan";
@@ -53,11 +59,44 @@ export async function POST(req: Request) {
     });
   }
 
-  // ponytail: mirror Clerk identity on first write. Replace with the Clerk
-  // webhook sync when billing lands (milestone 8); upsert is fine until then.
+  // ponytail: mirror Clerk identity on first write. The Stripe webhook keeps
+  // users.plan in sync after checkout (milestone 8); this upsert seeds the row.
   const user = await currentUser();
   const email = user?.emailAddresses[0]?.emailAddress ?? "";
-  await db.insert(users).values({ id: userId, email }).onConflictDoNothing();
+  const [row] = await db
+    .insert(users)
+    .values({ id: userId, email })
+    .onConflictDoNothing()
+    .returning({ plan: users.plan });
+  // onConflictDoNothing returns nothing on an existing row — read the plan back.
+  const userPlan =
+    row?.plan ??
+    (
+      await db
+        .select({ plan: users.plan })
+        .from(users)
+        .where(eq(users.id, userId))
+    )[0]?.plan ??
+    "free";
+
+  // Entitlement gate (milestone 8): monthly interview quota by plan. Counted off
+  // the same (user_id, created_at) index as the hourly cap. Checked before the
+  // metered plan-generation call below so an over-quota request costs nothing.
+  const [usage] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(interviews)
+    .where(
+      and(
+        eq(interviews.userId, userId),
+        gte(interviews.createdAt, monthStart()),
+      ),
+    );
+  if ((usage?.count ?? 0) >= monthlyInterviewLimit(userPlan)) {
+    return new Response(
+      "Monthly interview limit reached — upgrade to Pro for more.",
+      { status: 402 },
+    );
+  }
 
   // Generate the phased plan up front (§4.1) and persist it as plan_json. When a
   // résumé/JD is supplied, an LLM personalizes WHICH bank questions to ask (tier

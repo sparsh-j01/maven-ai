@@ -1,10 +1,11 @@
 import { UserButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
-import { feedbackReports, getDb, interviews } from "@maven-ai/db";
+import { feedbackReports, getDb, interviews, users } from "@maven-ai/db";
 import { desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { UpgradeButton } from "@/components/upgrade-button";
 
 export const dynamic = "force-dynamic";
 
@@ -39,9 +40,22 @@ async function listInterviews(userId: string) {
   }
 }
 
+async function getPlan(userId: string): Promise<string> {
+  try {
+    const [row] = await getDb()
+      .select({ plan: users.plan })
+      .from(users)
+      .where(eq(users.id, userId));
+    return row?.plan ?? "free";
+  } catch {
+    return "free";
+  }
+}
+
 export default async function DashboardPage() {
   const { userId } = await auth();
   const rows = userId ? await listInterviews(userId) : [];
+  const plan = userId ? await getPlan(userId) : "free";
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
@@ -52,7 +66,10 @@ export default async function DashboardPage() {
         >
           maven<span className="text-teal">.ai</span>
         </Link>
-        <UserButton />
+        <div className="flex items-center gap-4">
+          {plan === "free" && <UpgradeButton />}
+          <UserButton />
+        </div>
       </header>
 
       <div className="mt-10 flex items-center justify-between">
