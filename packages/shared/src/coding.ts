@@ -6,23 +6,16 @@ import {
   shiftDifficulty,
 } from "./interview";
 
-// Milestone 6: the live coding round. Each problem is a classic stdin → stdout
-// task so the sandbox (Judge0, §8) can grade it by comparing program output to an
-// expected output — no per-language test harness needed. The PUBLIC half lives
-// here: the statement the agent reads aloud + the browser shows, and the starter
-// code Monaco loads. The SECRET half (the exact stdin + the reference solver that
-// derives the expected stdout) lives only with the grader — the agent's
-// apps/agent/coding.py — so the answer never rides to the browser in room
-// metadata where a candidate could read it and hard-code it (F1, §8.1). The two
-// halves are linked by problem `id`: every id below MUST have a grader in
-// coding.py (a pytest enforces that contract).
+// The live coding round. Each problem is a stdin → stdout task the sandbox grades
+// by comparing output. The PUBLIC half (statement + starter code) lives here; the
+// SECRET half (exact stdin + reference solver) lives only with the grader in
+// apps/agent/coding.py, so the answer never reaches the browser. Every id below
+// MUST have a matching grader in coding.py (a pytest enforces it).
 
 export const LANGUAGES = ["python", "javascript"] as const;
 export type Language = (typeof LANGUAGES)[number];
 
 // Generic starter per language: read all of stdin into `data`, print the answer.
-// ponytail: one stub per language, shared across problems. Per-problem signatures
-// (parsing scaffolded for the candidate) are a nicety to add when a problem needs it.
 export const STARTER_BY_LANGUAGE: Record<Language, string> = {
   python: `import sys
 
@@ -39,15 +32,12 @@ data = sys.stdin.read()
 export interface CodingProblem {
   id: string;
   title: string;
-  // Statement, including the exact input/output format (the grader matches stdout).
+  // Statement + exact I/O format (the grader matches stdout).
   prompt: string;
   difficulty: Difficulty;
 }
 
-// The bank. ~12 per difficulty, spanning the classic categories (arrays, strings,
-// hashing, two-pointer, sliding window, stack, sorting, math, recursion, DP,
-// greedy) so a randomly-drawn pair feels fresh and covers the ground. Grow toward
-// ~50 per band by appending here AND adding the matching grader in coding.py.
+// The bank. Grow by appending here AND adding the matching grader in coding.py.
 export const CODING_PROBLEMS: CodingProblem[] = [
   // ─────────────── easy ───────────────
   {
@@ -358,16 +348,14 @@ export const CODING_PROBLEMS: CodingProblem[] = [
   },
 ];
 
-// Every coding round is exactly two problems (architecture §4.2); seniority +
-// company flavour set their difficulty, not their count.
+// Every coding round is exactly two problems; seniority/company set difficulty, not count.
 export const CODING_COUNT = 2;
 
 export function getCodingProblem(id: string): CodingProblem | undefined {
   return CODING_PROBLEMS.find((p) => p.id === id);
 }
 
-// Seniority sets the base coding difficulty (mirrors the headline difficulty used
-// for the spoken technical phase, so the two can't feel out of step).
+// Seniority sets the base coding difficulty (mirrors the spoken technical phase).
 const DIFFICULTY_FOR: Record<Seniority, Difficulty> = {
   intern: "easy",
   junior: "easy",
@@ -387,11 +375,9 @@ function shuffled<T>(arr: T[]): T[] {
   return a;
 }
 
-// The two problems for a coding round: both at the (company-adjusted) seniority
-// difficulty, drawn at RANDOM from that band so a given level isn't the same two
-// every interview. Topped up from the rest of the bank only if a band ever holds
-// fewer than two. Random — but the plan is built once at interview creation and
-// persisted, so a single draw is what the agent and editor both see.
+// Two problems at the (company-adjusted) seniority difficulty, drawn at random and
+// topped up from the rest of the bank if a band holds fewer than two. The plan is
+// persisted at creation, so the agent and editor see the same draw.
 export function selectCodingProblems(
   seniority: Seniority,
   companyType?: CompanyType | null,

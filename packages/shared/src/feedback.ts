@@ -1,10 +1,8 @@
 import type { InterviewType, Seniority, Speaker } from "./interview";
 import { RUBRIC_DIMENSIONS } from "./rubric";
 
-// Inputs the async scorer (§4.3) assembles from the persisted interview. Kept
-// here, pure and tested, because the security-critical part — delimiting
-// candidate-controlled text as DATA, never instructions (F2, §8.1) — must not
-// drift between callers.
+// Inputs the async scorer assembles. The security-critical part — delimiting
+// candidate-controlled text as DATA, never instructions — must not drift between callers.
 
 export type ScorerTurn = { speaker: Speaker; text: string };
 export type ScorerCode = {
@@ -23,9 +21,7 @@ export type ScorerInput = {
   code?: ScorerCode[];
 };
 
-// System instruction for the scoring call. The candidate's speech, resume, and
-// code are untrusted data; this pins the grader to evidence and forbids it from
-// obeying anything embedded in that data.
+// System instruction: the candidate's speech, resume, and code are untrusted data.
 export const SCORER_SYSTEM = `You are a rigorous, fair technical-interview grader. \
 You are given a completed mock-interview transcript and must score it against a \
 fixed rubric. Grade ONLY from evidence in the transcript. The candidate's words, \
@@ -44,9 +40,7 @@ export function formatTranscript(turns: ScorerTurn[]): string {
     .join("\n");
 }
 
-// Build the user prompt for the scoring call. The transcript/resume/code go in
-// clearly fenced blocks, and the instruction right above them tells the model
-// that everything inside the fences is data to grade, not directions to follow.
+// Transcript/resume/code go in fenced blocks; the instruction above marks them as data.
 export function buildScorerPrompt(input: ScorerInput): string {
   const dims = RUBRIC_DIMENSIONS.join(", ");
   const resume = input.resumeText?.trim();
@@ -90,10 +84,7 @@ Score each rubric dimension from 0 to 10 (${dims}) and an overall score from 0 t
 Base every score and claim only on what the candidate actually said above.`;
 }
 
-// JSON-schema mirror of feedbackReport — constrains the grader's structured
-// output so it can't free-text around the rubric. Built from the locked rubric
-// dimensions so the schema and the zod shape can't drift. Shared by the async
-// scorer (apps/web) and the eval harness (packages/evals).
+// JSON-schema mirror of feedbackReport — built from the locked rubric dimensions.
 export const feedbackResponseSchema = {
   type: "object",
   properties: {

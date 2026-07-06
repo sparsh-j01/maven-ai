@@ -1,15 +1,9 @@
-// Plan entitlements (milestone 8). The monthly interview quota is the paid
-// boundary: free users get a taste, pro unlocks the real volume. Kept here —
-// pure and tested — so the API gate and the billing/upgrade UI read the same
-// numbers and can't drift.
-
 export type Plan = "free" | "pro";
 
+// free gets a taste, pro is unlimited. Infinity so the `count >= limit` gate never trips for pro.
 export const PLAN_LIMITS: Record<Plan, { monthlyInterviews: number }> = {
-  free: { monthlyInterviews: 5 },
-  // Bounded, not infinite: a generous cap still stops a compromised pro account
-  // from running unbounded metered spend.
-  pro: { monthlyInterviews: 200 },
+  free: { monthlyInterviews: 3 },
+  pro: { monthlyInterviews: Infinity },
 };
 
 export function isPlan(value: string): value is Plan {
@@ -22,8 +16,10 @@ export function monthlyInterviewLimit(plan: string): number {
     .monthlyInterviews;
 }
 
-// Start of the current UTC calendar month — the window interviews are counted
-// against for the quota.
+export function isUnlimited(plan: string): boolean {
+  return !Number.isFinite(monthlyInterviewLimit(plan));
+}
+
 export function monthStart(now: Date = new Date()): Date {
   return new Date(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0),

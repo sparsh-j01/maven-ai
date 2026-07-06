@@ -1,7 +1,6 @@
 import { z } from "zod";
 
-// Locked rubric dimensions — these are the axes of the report radar chart (§7.5)
-// and the keys of feedback_reports.rubric_scores (§3). Each scored 0–10.
+// Locked rubric dimensions: the report radar axes and feedback_reports.rubric_scores keys.
 export const RUBRIC_DIMENSIONS = [
   "communication",
   "problem_solving",
@@ -21,14 +20,12 @@ export const rubricScores = z.object(
 );
 export type RubricScores = z.infer<typeof rubricScores>;
 
-// A model answer shown for a weak response (§7.5).
 export const modelAnswer = z.object({
   question: z.string(),
   whatGreatLooksLike: z.string(),
 });
 
-// The structured-output shape the async scorer must produce (§4.3).
-// JSON-schema-constrained so the LLM can't free-text its way around it.
+// The structured-output shape the scorer must produce.
 export const feedbackReport = z.object({
   overallScore: z.number().min(0).max(100),
   rubricScores,

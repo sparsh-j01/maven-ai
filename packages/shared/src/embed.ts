@@ -1,18 +1,10 @@
-// Gemini text embeddings (gemini-embedding-001, requested at 768 dims to match
-// the vector(768) columns on the questions/resumes tables). The embedding model is a
-// separate dependency from the chat LLM by design (architecture §2.4): swapping
-// the brain doesn't re-embed the banks. Server-only — reads GOOGLE_API_KEY and
-// must never be bundled to the client.
-//
-// ponytail: a fetch wrapper, not an SDK. Swapping providers is editing this file.
+// Gemini text embeddings (768 dims to match the vector(768) columns). Server-only —
+// reads GOOGLE_API_KEY and must never be bundled to the client.
 
 const MODEL = "gemini-embedding-001";
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 const DIMS = 768; // must match EMBED_DIMS / vector(768) columns in db/schema.ts
-// Bound the request like the other Gemini calls (chooseWithGemini/structureResume):
-// embedText sits on the interview-create path (retrieveCandidates), so a hung
-// connection must fall back, not stall the request. Generous enough for the
-// seed's one-shot batch of the (small) question bank.
+// Bound the request so a hung connection on the interview-create path falls back, not stalls.
 const TIMEOUT_MS = 8000;
 
 function apiKey(): string {
@@ -21,14 +13,11 @@ function apiKey(): string {
   return key;
 }
 
-// Embed a single string (used for the retrieval query at plan time). Routed
-// through the batch endpoint: this key's :embedContent method 404s while
-// :batchEmbedContents works, so there's one code path that we know works.
+// Routed through the batch endpoint: this key's :embedContent 404s, :batchEmbedContents works.
 export async function embedText(text: string): Promise<number[]> {
   return (await embedTexts([text]))[0]!;
 }
 
-// Embed many strings in one request (used to seed the question bank).
 export async function embedTexts(texts: string[]): Promise<number[][]> {
   if (texts.length === 0) return [];
   const ctrl = new AbortController();

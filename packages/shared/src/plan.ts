@@ -11,17 +11,10 @@ import {
   shiftDifficulty,
 } from "./interview";
 
-// Milestone 4: deterministic interview-plan generation from a curated, in-code
-// question bank. No LLM and no RAG — the questions are human-written and selected
-// by phase + seniority, so the plan stays grounded (architecture §5) without
-// hallucination, latency, or per-interview cost.
-//
-// ponytail: the bank lives in code and selection is a pure function for M4.
-// Milestone 7 (resume + RAG) moves this content into the `questions` Postgres
-// table with Gemini embeddings and swaps the selection here for a pgvector
-// top-k retrieval + an LLM that assembles the plan against the candidate's
-// resume. The curated questions are the reusable artifact; only the
-// storage/retrieval mechanism changes.
+// Deterministic interview-plan generation from a curated, in-code question bank.
+// No hallucination — questions are human-written and selected by phase + seniority,
+// so the plan stays grounded. Personalization (RAG/LLM) only reorders and
+// sub-selects from this same bank; it can never invent a question.
 
 // Which phase a bank question belongs to for selection. intro/wrap_up are agent
 // behaviors (greet / close) rather than bank questions, so they aren't selectable.
@@ -34,10 +27,8 @@ interface BankQuestion extends PlannedQuestion {
   roles?: string[];
 }
 
-// The curated bank — modest but spanning warmup / technical / behavioral /
-// system-design across difficulties, so every (type, seniority) yields a sane
-// plan. Role-specific questions come before the general ones of the same
-// difficulty so a matching role surfaces them first.
+// The curated bank. Role-specific questions come before general ones of the same
+// difficulty, so a matching role surfaces them first.
 const BANK: BankQuestion[] = [
   // — warmup (light; selected regardless of seniority) —
   {
@@ -269,9 +260,7 @@ const TECH_DIFFICULTY: Record<Seniority, Difficulty[]> = {
   sde3: ["hard", "medium"],
 };
 
-// The preferred technical difficulties for a seniority, shifted by the target
-// company flavour (product harder, service easier). Dedup keeps it a clean
-// preference order after a shift collides two bands.
+// Preferred technical difficulties for a seniority, shifted by company flavour, deduped.
 function techOrder(
   seniority: Seniority,
   companyType?: CompanyType | null,
@@ -280,9 +269,7 @@ function techOrder(
   return [...new Set(TECH_DIFFICULTY[seniority].map((d) => shiftDifficulty(d, by)))];
 }
 
-// Headline difficulty shown to the candidate: the band we prefer when picking
-// this level's technical questions, after the company shift. Derived from the
-// same order that drives selection, so the badge can't drift from the plan.
+// Headline difficulty badge — the top of the same order that drives selection, so it can't drift.
 export function seniorityDifficulty(
   s: Seniority,
   companyType?: CompanyType | null,
@@ -300,11 +287,8 @@ function roleMatches(tag: string, role: string): boolean {
   return role.toLowerCase().includes(tag.toLowerCase());
 }
 
-// The coding phase carries two PlannedQuestions built from curated coding
-// problems (§4.2), both at the seniority's difficulty. The agent presents
-// `prompt` and the candidate solves it in the editor; the secret stdin/expected
-// used to grade lives only with the grader (apps/agent/coding.py), keyed by id.
-// Deterministic per seniority, so buildPlan and assemblePlan agree.
+// Coding questions from the curated problems; the secret stdin/expected lives only
+// with the grader (apps/agent/coding.py), keyed by id. Deterministic per seniority.
 function codingQuestion(p: CodingProblem): PlannedQuestion {
   return {
     id: p.id,
@@ -333,10 +317,8 @@ function toPlanned(q: BankQuestion): PlannedQuestion {
   };
 }
 
-// The ordered eligible pool for a phase, best-first — so the plain plan is just
-// the first `count`. Tier-B personalization reorders/sub-selects from this same
-// pool, which is what keeps every generated plan grounded in the curated bank
-// (no invented or out-of-phase questions).
+// Ordered eligible pool for a phase, best-first. Personalization reorders/sub-selects
+// from this same pool — what keeps every plan grounded in the curated bank.
 function eligiblePool(
   phase: SelectablePhase,
   role: string,
@@ -380,8 +362,7 @@ function select(
     .map(toPlanned);
 }
 
-// Which selectable bank phase backs each plan phase. intro/wrap_up are agent
-// behaviours and carry no bank questions.
+// intro/wrap_up are agent behaviours with no bank questions.
 const SELECTABLE_OF: Partial<Record<Phase, SelectablePhase>> = {
   warmup: "warmup",
   technical: "technical",
@@ -395,10 +376,7 @@ type PlanInput = {
   companyType?: CompanyType | null;
 };
 
-// buildPlan — the phased, deterministic interview plan stored as
-// interviews.plan_json and walked by the agent's state machine (§2.3). The same
-// inputs always produce the same plan, which is what makes it testable. company
-// is interview flavour for the agent's prompt, not a selection input.
+// The phased, deterministic plan stored as interviews.plan_json. Same inputs → same plan.
 export function buildPlan(input: PlanInput): InterviewPlan {
   const { role, seniority, type, companyType } = input;
   return {
@@ -414,9 +392,7 @@ export function buildPlan(input: PlanInput): InterviewPlan {
   };
 }
 
-// The per-phase choices a personalizer (tier B) gets: pick `count` ids from
-// `options`, every option drawn from the curated bank. Exposed so an LLM can
-// tailor the selection to a résumé/JD without ever leaving the grounded set.
+// Per-phase choices a personalizer gets: pick `count` ids from `options`, all from the bank.
 export interface PlanCandidates {
   phase: SelectablePhase;
   count: number;
@@ -438,12 +414,8 @@ export function planCandidates(input: PlanInput): PlanCandidates[] {
   return out;
 }
 
-// rerankCandidates — reorder each phase's options so the ids in `order`
-// (best-first, e.g. from a pgvector résumé-similarity query) come first, ties
-// and unranked options keeping their original relative order. Pure so it's unit
-// testable; the RAG retrieval (web) does the DB/embedding I/O and calls this.
-// Reorders only — never adds or drops an option — so the plan stays grounded in
-// the curated bank regardless of what retrieval returns.
+// Reorder each phase's options by `order` (best-first, e.g. pgvector similarity), ties
+// keeping original order. Reorders only — never adds or drops — so the plan stays grounded.
 export function rerankCandidates(
   candidates: PlanCandidates[],
   order: string[],
@@ -463,9 +435,7 @@ export function rerankCandidates(
   }));
 }
 
-// The curated bank flattened for seeding the `questions` Postgres table (slug =
-// the in-code id). The bank stays the source of truth in code; the table is its
-// embedded mirror for pgvector retrieval (milestone 7).
+// The curated bank flattened for seeding the `questions` table (slug = the in-code id).
 export interface SeedQuestion {
   slug: string;
   role: string;
@@ -486,12 +456,9 @@ export function bankForSeeding(): SeedQuestion[] {
   }));
 }
 
-// assemblePlan — build a plan from a personalizer's chosen question ids. Each
-// phase is filled ONLY from its eligible bank pool: chosen ids are kept in the
-// given order (deduped; unknown, foreign-phase, or invalid ids dropped), then
-// topped up from the deterministic order if the chooser under-picked. So an
-// empty or junk choice degrades to exactly buildPlan — a generated plan can
-// never contain an invented or out-of-phase question.
+// Build a plan from a personalizer's chosen ids. Each phase is filled ONLY from its
+// eligible bank pool (unknown/foreign-phase ids dropped), topped up from the
+// deterministic order — so junk input degrades to buildPlan, never an invented question.
 export function assemblePlan(
   input: PlanInput,
   chosen: Record<string, string[]>,
