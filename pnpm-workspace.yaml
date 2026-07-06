@@ -6,6 +6,9 @@ allowBuilds:
   # @sentry/cli's postinstall only fetches the source-map-upload binary, which we
   # don't use (no Sentry build plugin). Skip it so install exits 0.
   '@sentry/cli': false
+  # posthog-js pulls core-js; its postinstall only prints an Open Collective
+  # funding banner — no build output we use. Skip it so install exits 0.
+  core-js: false
   esbuild: true
   protobufjs: true
   sharp: true
@@ -16,3 +19,19 @@ onlyBuiltDependencies:
   - protobufjs
   - sharp
   - unrs-resolver
+# Build scripts we deliberately skip (the `false` rows above). Committed here so
+# the decision holds in CI too, not just in a local `pnpm approve-builds`.
+ignoredBuiltDependencies:
+  - core-js
+overrides:
+  dompurify@<3.4.9: ^3.4.9
+  postcss@<8.5.10: ^8.5.10
+  vite@<=6.4.2: ^6.4.3
+  vitest@<3.2.6: ^3.2.6
+  esbuild@<=0.24.2: ^0.25.0
+minimumReleaseAgeExclude:
+  - dompurify@3.4.9
+  - postcss@8.5.10
+  - vite@6.4.3
+  - vitest@3.2.6
+  - esbuild@0.25.0
