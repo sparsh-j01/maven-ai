@@ -10,20 +10,11 @@ import {
 import { embedText } from "@maven-ai/shared/embed";
 import { cosineDistance, isNotNull } from "drizzle-orm";
 
-// RAG retrieval (§5): rank the curated question bank by semantic similarity to
-// the candidate's résumé/JD using pgvector, so the options the LLM assembler
-// sees first are grounded in THIS candidate's background. It re-ranks the
-// deterministic candidate pool (rerankCandidates) rather than replacing it, so a
-// missing key, empty table, or DB error can only reorder — never drop a
-// question. Returns null on any failure → personalizePlan uses the plain order.
-//
-// ponytail: re-rank the whole (small) bank, no top-k LIMIT. When the bank grows
-// past what fits in the assembler prompt, switch the query to
-// `… ORDER BY distance LIMIT k` and feed only the top-k as candidates.
+// RAG retrieval: rank the curated question bank by pgvector similarity to the résumé/JD.
+// It re-ranks the deterministic pool (never drops a question); returns null on any
+// failure, so personalizePlan falls back to the plain order.
 
-// pgvector re-ranks the (small) bank in milliseconds; this only bounds a hung DB
-// connection so retrieval fails over to the deterministic order instead of
-// stalling interview creation. embedText self-caps at 8s (see embed.ts).
+// Bounds a hung DB connection so retrieval fails over to the deterministic order.
 const DB_TIMEOUT_MS = 4000;
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {

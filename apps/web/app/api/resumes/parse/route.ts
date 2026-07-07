@@ -4,23 +4,17 @@ import { isPdfHeader } from "@/lib/pdf-header.mjs";
 import { MAX_PAGES, parsePdf } from "@/lib/pdf-parse";
 import { persistResume } from "@/lib/store-resume";
 
-// POST /api/resumes/parse — pull the text out of an uploaded résumé PDF so the
-// setup form can drop it into the résumé field, where the existing paste-text
-// path embeds it for RAG personalization (§5). We only extract text; the file
-// itself isn't stored (durable R2/MinIO storage + the `resumes` table land with
-// the storage layer — nothing reads them yet).
+// Pull the text out of an uploaded résumé PDF for the setup form's résumé field.
 //
-// Hardening (§8.1 F6): auth first, a per-user throttle, content-type pinned to
-// PDF AND verified by magic bytes (the client label is untrusted), size capped
-// before we buffer, then parsing is done in a worker thread that caps pages,
-// hard-kills a CPU-bomb on timeout, and caps memory. The file is only ever read
-// as data — never executed; embedded PDF JavaScript is not run.
+// Hardening: auth first, a per-user throttle, content-type pinned to PDF AND verified
+// by magic bytes (the client label is untrusted), size capped before buffering, then
+// parsing in a worker thread that caps pages, hard-kills a CPU-bomb, and caps memory.
+// Read as data only — embedded PDF JavaScript is never run.
 
-const MAX_BYTES = 3 * 1024 * 1024; // 3MB — résumés are tiny; well under Vercel's 4.5MB request cap
+const MAX_BYTES = 3 * 1024 * 1024; // 3MB — well under Vercel's 4.5MB request cap
 
-// ponytail: in-memory per-user throttle — resets on redeploy and isn't shared
-// across serverless instances, but it's zero-dep and blunts single-instance
-// abuse. Swap to @upstash/ratelimit if it needs to hold cross-instance (§8).
+// In-memory per-user throttle — resets on redeploy and isn't cross-instance, but
+// zero-dep and blunts single-instance abuse.
 const WINDOW_MS = 10 * 60_000;
 const MAX_PARSES = 20;
 const hits = new Map<string, number[]>();
@@ -39,10 +33,8 @@ export async function POST(req: Request) {
     return new Response("Too many uploads — try again shortly.", { status: 429 });
   }
 
-  // Reject by the declared length before buffering the body. A missing/invalid
-  // length is untrusted so we refuse it; multipart runs a little over the file
-  // itself, so allow a small margin over the file cap. file.size below is the
-  // authoritative file-only check.
+  // Reject by declared length before buffering; a small margin covers multipart
+  // overhead. file.size below is the authoritative file-only check.
   const lenHeader = req.headers.get("content-length");
   const declared = lenHeader === null ? NaN : Number(lenHeader);
   if (!Number.isFinite(declared) || declared > MAX_BYTES + 1024) {

@@ -1,10 +1,5 @@
-// One Gemini call that structures résumé text into a skills/experience profile
-// (§5 → resumes.parsed_json). Best-effort: any failure returns null and the
-// caller stores null — nothing downstream depends on this, it's durable context
-// for later grounding. The résumé is untrusted data and is labelled as such.
-//
-// ponytail: a fetch wrapper mirroring personalize-plan.ts, not an SDK. Swapping
-// Gemini → Claude is editing this file.
+// One Gemini call that structures résumé text into a profile. Best-effort: any failure
+// returns null. The résumé is untrusted data and labelled as such in the prompt.
 
 const MODEL = "gemini-2.5-flash";
 const TIMEOUT_MS = 8000;

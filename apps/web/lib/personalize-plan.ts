@@ -8,22 +8,12 @@ import type {
 import { assemblePlan, buildPlan, planCandidates } from "@maven-ai/shared";
 import { retrieveCandidates } from "@/lib/retrieve";
 
-// Plan personalization, two layers:
-//   1. RAG retrieval (retrieveCandidates) ranks the curated bank by pgvector
-//      similarity to the résumé/JD, so the most relevant questions lead.
-//   2. An LLM then chooses WHICH of those bank questions to ask. It can only pick
-//      from the bank (assemblePlan enforces that — see plan.ts), so a hijacked,
-//      malformed, or empty response degrades to the deterministic plan.
-// Both layers fail safe: retrieval falls back to the deterministic order, the LLM
-// to assemblePlan, and the whole thing to buildPlan. Interview creation must never
-// block on, or be broken by, the model or the vector store.
-//
-// ponytail: one function, not a provider-agnostic class. Swapping Gemini → Claude
-// is editing this file. Grounding lives in assemblePlan, never in trusting output.
+// Fails safe at every layer: RAG retrieval falls back to the deterministic order,
+// the LLM may only pick ids from the curated bank (assemblePlan enforces it, so a
+// hijacked or malformed response can't inject questions), and the whole thing falls
+// back to buildPlan. Creation never blocks on the model or the vector store.
 
 const MODEL = "gemini-2.5-flash";
-// Bounded so the create request stays under the serverless function limit even
-// when the model is slow; on timeout we fall back to the deterministic plan.
 const TIMEOUT_MS = 7000;
 
 type Input = {

@@ -11,32 +11,24 @@ import { and, eq, gte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { personalizePlan } from "@/lib/personalize-plan";
 
-// Per-user creation cap (spend cap, §8.1): one account can't loop this endpoint
-// to burn plan-generation (Gemini) calls. Rolling 1-hour window, counted off the
-// (user_id, created_at) index. ponytail: a DB count, not Upstash — Postgres is
-// already required here; reach for @upstash/ratelimit only if you later need
-// sub-second or cross-region limiting.
+// Per-user creation cap (spend cap): one account can't loop this endpoint to burn
+// Gemini plan-generation calls. Rolling 1-hour window off the (user_id, created_at) index.
 const MAX_INTERVIEWS_PER_HOUR = 10;
 
-// Setup-wizard input (milestone 4). role/seniority/type drive plan generation;
-// company is optional flavour the agent uses for its prompt. companyType shifts
-// the difficulty band (product harder / service easier / startup neutral) and the
-// agent's tone.
+// role/seniority/type drive plan generation; company is optional flavour; companyType
+// shifts the difficulty band and the agent's tone.
 const createInput = z.object({
   role: z.string().trim().min(1).max(100),
   company: z.string().trim().max(100).optional(),
   companyType: companyType.optional(),
   seniority,
   type: interviewType,
-  // Optional pasted tailoring context. Capped here to bound prompt size and the
-  // injection surface; the agent further truncates + delimits it as data (§8.1).
+  // Capped to bound prompt size and the injection surface; the agent re-truncates + delimits it as data.
   resumeText: z.string().trim().max(10000).optional(),
   jdText: z.string().trim().max(5000).optional(),
 });
 
-// POST /api/interviews — create a session row (status `provisioning`) with a
-// generated, phased question plan. The token + room join happen on the room
-// page (see [id]/token).
+// Create a session row (status `provisioning`) with a generated, phased question plan.
 export async function POST(req: Request) {
   const { userId } = await auth();
   if (!userId) return new Response("Unauthorized", { status: 401 });
@@ -59,8 +51,7 @@ export async function POST(req: Request) {
     });
   }
 
-  // ponytail: mirror Clerk identity on first write. The Stripe webhook keeps
-  // users.plan in sync after checkout (milestone 8); this upsert seeds the row.
+  // Mirror Clerk identity on first write; the gateway webhook keeps users.plan in sync.
   const user = await currentUser();
   const email = user?.emailAddresses[0]?.emailAddress ?? "";
   const [row] = await db
@@ -79,9 +70,8 @@ export async function POST(req: Request) {
     )[0]?.plan ??
     "free";
 
-  // Entitlement gate (milestone 8): monthly interview quota by plan. Counted off
-  // the same (user_id, created_at) index as the hourly cap. Checked before the
-  // metered plan-generation call below so an over-quota request costs nothing.
+  // Entitlement gate: monthly quota by plan, checked before the metered call so an
+  // over-quota request costs nothing.
   const [usage] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(interviews)
@@ -98,10 +88,8 @@ export async function POST(req: Request) {
     );
   }
 
-  // Generate the phased plan up front (§4.1) and persist it as plan_json. When a
-  // résumé/JD is supplied, an LLM personalizes WHICH bank questions to ask (tier
-  // B), grounded to the bank with a deterministic fallback. The cursor starts at
-  // intro; the agent advances it via next_question.
+  // Generate the phased plan and persist as plan_json. With a résumé/JD, an LLM
+  // personalizes which bank questions to ask, grounded with a deterministic fallback.
   const plan = await personalizePlan({
     role,
     seniority: sen,

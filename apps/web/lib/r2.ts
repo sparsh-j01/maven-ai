@@ -1,12 +1,7 @@
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
-// Cloudflare R2 via the S3 API (§8, docs/CLAUDE.md stack). Object storage for
-// résumé files (and later interview audio). Buckets are private; reads happen
-// through signed, expiring URLs (add when a download/report UI needs them — no
-// consumer yet). Everything is config-gated: with the R2_* env unset this module
-// imports fine and isR2Configured() is false, so the app runs with no bucket.
-//
-// R2 is S3-compatible, so this same code points at real R2 in prod or a local
+// Cloudflare R2 via the S3 API. Private buckets; config-gated (isR2Configured() is
+// false with R2_* unset). S3-compatible, so it points at real R2 in prod or a local
 // S3 (MinIO/localstack) in dev — only the endpoint + credentials change.
 
 function cfg() {
@@ -37,7 +32,7 @@ function client(): { s3: S3Client; bucket: string } {
   return { s3: _client, bucket: c.bucket! };
 }
 
-// Store bytes under `key`; returns the key (persisted as resumes.file_url).
+// Store bytes under `key`; returns the key.
 export async function putObject(key: string, bytes: Uint8Array, contentType: string): Promise<string> {
   const { s3, bucket } = client();
   await s3.send(

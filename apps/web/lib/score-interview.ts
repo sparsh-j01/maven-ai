@@ -44,8 +44,7 @@ async function loadInterview(interviewId: string): Promise<Loaded | null> {
     .where(eq(feedbackReports.interviewId, interviewId))
     .limit(1);
 
-  // Ordered by start offset — the index covers this, and it's the order the
-  // report renders the transcript in.
+  // Ordered by start offset (index-covered) — the order the report renders.
   const turns = await db
     .select({ speaker: interviewTurns.speaker, text: interviewTurns.text })
     .from(interviewTurns)
@@ -154,10 +153,9 @@ async function markFailed(interviewId: string): Promise<void> {
     .where(eq(interviews.id, interviewId));
 }
 
-// The durable scorer (§4.3): triggered by interview/ended, it loads the
-// transcript, runs ONE structured-output grading call, and writes the report.
-// Off the request path, retried on transient failure, and left in a `failed`
-// state (which the report page can retry) once retries are exhausted.
+// The durable scorer: loads the transcript, runs one structured grading call, writes
+// the report. Off the request path; left `failed` (retryable from the report page)
+// once retries are exhausted.
 export const scoreInterview = inngest.createFunction(
   {
     id: "score-interview",
@@ -191,8 +189,7 @@ type GeminiResponse = {
   candidates?: { content?: { parts?: { text?: string }[] } }[];
 };
 
-// The failure handler receives the inngest/function.failed event; the original
-// trigger is nested under data.event. Read it defensively.
+// The failure event nests the original trigger under data.event; read it defensively.
 function failedInterviewId(event: unknown): string | undefined {
   const original = (
     event as { data?: { event?: { data?: { interviewId?: string } } } }

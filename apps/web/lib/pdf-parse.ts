@@ -1,15 +1,9 @@
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 
-// Extract résumé text from PDF bytes in a worker thread so a malicious CPU-bomb
-// PDF can be hard-terminated on timeout (a main-thread timeout can't interrupt a
-// synchronous pdf.js loop) and an allocation bomb is capped to the worker's
-// heap. The worker file is loaded by path (not imported) so it stays out of the
-// Next bundle; unpdf is resolved from node_modules at runtime.
-//
-// ponytail: process.cwd() is the app dir under `next dev`/`next start`. A Vercel
-// deploy must trace lib/pdf-worker.mjs + unpdf into the function (see
-// next.config outputFileTracingIncludes) — verify when deployment lands.
+// Extract résumé text in a worker thread so a malicious CPU-bomb PDF can be hard-
+// terminated on timeout and an allocation bomb is capped to the worker heap. The worker
+// is loaded by path (not imported) so it stays out of the Next bundle.
 
 const WORKER_PATH = path.join(process.cwd(), "lib", "pdf-worker.mjs");
 const PARSE_TIMEOUT_MS = 5000;
@@ -30,8 +24,7 @@ export function parsePdf(bytes: Uint8Array, opts?: { spin?: boolean }): Promise<
       void worker.terminate();
       resolve(r);
     };
-    // Clone the buffer into the worker (not transfer) so the caller keeps its
-    // copy — the route still needs the bytes to upload the file to R2.
+    // Clone the buffer (not transfer) so the caller keeps its copy to upload to R2.
     const worker = new Worker(WORKER_PATH, {
       workerData: { buffer: bytes.buffer, maxPages: MAX_PAGES, maxChars: MAX_CHARS, spin: opts?.spin ?? false },
       resourceLimits: { maxOldGenerationSizeMb: 256 },
