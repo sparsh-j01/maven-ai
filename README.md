@@ -9,9 +9,11 @@ transcript.
 > contracts, auth, web shell, the live turn-based voice loop, the plan-driven
 > interview state machine, the async scored feedback report (rubric radar +
 > transcript), the live coding round (Monaco + Judge0 sandbox), resume-driven
-> RAG personalization, and Stripe billing + plan entitlements (with Sentry +
-> Langfuse observability, a scorer eval harness, and CI) are in place;
-> UI/UX polish is next.
+> RAG personalization, and regional billing (Stripe globally + Razorpay in
+> India, monthly/annual) with plan entitlements — plus Sentry + Langfuse
+> observability, a scorer eval harness, CI, and a first UI/security polish pass
+> (widened dashboard, voice-room speaker orb, footer + legal pages, enforced
+> CSP) — are in place.
 
 ## Why this exists
 
@@ -39,6 +41,9 @@ not the UI.
   question bank (Postgres + pgvector) so questions stay grounded.
 - **Evals in CI.** Golden-transcript scoring tests and an LLM-as-judge check on
   question quality, so a bad prompt change cannot merge silently.
+- **Regional billing.** Free (3 fully-tailored interviews/mo) vs Pro (unlimited);
+  ₹ via Razorpay in India, $ via Stripe everywhere else, monthly or annual
+  (≈2 months free) — region auto-detected by IP with a manual currency toggle.
 
 ## Architecture
 
@@ -53,7 +58,7 @@ session open for minutes.
    Next.js BFF / API        LiveKit SFU (media transport)
    • mint scoped tokens          │ agent joins room
    • CRUD / webhooks             ▼
-   • Clerk · Stripe        Voice Agent (Python · LiveKit Agents)
+   • Clerk · billing       Voice Agent (Python · LiveKit Agents)
             │                VAD → STT → LLM → TTS loop
             ▼                tools: next_question, score_answer,
    Postgres + pgvector             run_code, end_interview
@@ -75,7 +80,7 @@ LiveKit token. All third-party calls go through the BFF or the agent.
 | Data | Postgres + pgvector, Drizzle ORM |
 | Storage | Cloudflare R2 (audio + resumes) |
 | Async | Inngest |
-| Billing | Stripe |
+| Billing | Stripe (global, $) + Razorpay (India, ₹) — monthly/annual |
 | Code sandbox | Self-hosted Judge0 |
 | Observability | Langfuse, Sentry, PostHog |
 
@@ -132,6 +137,15 @@ pnpm dev                    # run the web app
   (the voice loop auto-ends and the room is torn down), the coding sandbox is
   bounded per submission (25 runs, 20 KB), and interview creation is rate-limited
   per user (10/hour) so one account cannot drain metered services.
+- **Security headers + CSP** — an enforced Content-Security-Policy (script-src
+  pinned to self + the Clerk origin), plus `X-Frame-Options: DENY`, HSTS, and
+  `nosniff`, set once in `next.config.ts`.
+- **Prompt-injection defense** — candidate résumé/JD text is injected as clearly
+  delimited *data* (the model is told to ignore instructions inside it) and the
+  generated plan is grounded to the curated question bank, so a hijacked or
+  malformed model response degrades to the deterministic plan.
+- **Webhooks are signature-verified** — Stripe and Razorpay billing webhooks
+  authenticate by HMAC signature (they are not Clerk-protected).
 
 ## Roadmap
 
@@ -142,5 +156,5 @@ pnpm dev                    # run the web app
 5. End → async feedback report + rubric radar + transcript playback 
 6. Coding round (Monaco + sandbox + `run_code`) 
 7. Resume upload + RAG personalization
-8. Billing + entitlements, observability, evals, CI/CD
+8. Billing (Stripe + Razorpay, monthly/annual) + entitlements, observability, evals, CI/CD
 9. UI/UX polish (loading skeletons, transitions, empty/error states)
