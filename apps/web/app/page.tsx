@@ -1,92 +1,435 @@
 import { SignedIn, SignedOut, SignInButton, SignUpButton } from "@clerk/nextjs";
+import {
+  REGION_PRICING,
+  isCycle,
+  regionForCountry,
+} from "@maven-ai/shared";
+import { Check, ChevronDown } from "lucide-react";
+import { cookies, headers } from "next/headers";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { HeroInterview } from "@/components/hero-interview";
+import { HowItWorks } from "@/components/how-it-works";
+import { PrefToggle } from "@/components/pref-toggle";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { buttonVariants } from "@/components/ui/button";
+import { PricingGlass } from "@/components/ui/pricing-glass";
 
-// §7.1 — first impression is the product, not a generic SaaS hero.
-const steps = [
+const STEPS = [
   {
-    n: "1",
+    n: "01",
     title: "Pick a role",
-    body: "Choose the role, company flavor, and seniority. Optionally add your resume and the job description so questions match your background.",
+    body: "Choose the role, seniority, and format. Add your resume and the job description so questions target your actual background.",
   },
   {
-    n: "2",
-    title: "Talk for 10 minutes",
-    body: "A voice AI interviews you in clean turns — push-to-talk, no talking over each other — with adaptive follow-ups and a live coding round.",
+    n: "02",
+    title: "Talk for ten minutes",
+    body: "Push-to-talk with clean turns, no talking over each other. The interviewer asks adaptive follow-ups and runs a live coding round.",
   },
   {
-    n: "3",
-    title: "Get a scored report",
-    body: "A rubric-scored report with strengths, gaps, model answers, and a replayable transcript.",
+    n: "03",
+    title: "Read your report",
+    body: "Rubric scores per competency, strengths and gaps, model answers for weak spots, and the full replayable transcript.",
   },
-];
+] as const;
 
-export default function LandingPage() {
+const PLANS = [
+  {
+    name: "Free",
+    priceMonthly: "0",
+    priceAnnual: "0",
+    description: "Get a real sense of it.",
+    isPopular: false,
+    inherits: null,
+    features: [
+      "3 interviews per month",
+      "Résumé, JD & company tailoring",
+      "Adaptive voice interviewer",
+      "Live coding round",
+      "Rubric-scored report",
+    ],
+  },
+  {
+    name: "Pro",
+    priceMonthly: "19",
+    priceAnnual: "15",
+    description: "For an all-out prep stretch.",
+    isPopular: true,
+    inherits: "Free",
+    features: [
+      "Unlimited interviews — no monthly cap",
+      "Model answers for every weak spot",
+      "Full transcript & report history",
+    ],
+  },
+  {
+    name: "University",
+    priceMonthly: "Contact",
+    priceAnnual: "Contact",
+    description: "For universities, bootcamps & placement cells.",
+    isPopular: false,
+    inherits: "Pro",
+    features: [
+      "Cohort seats & central billing",
+      "Placement-cell progress dashboard",
+      "Onboarding & training",
+    ],
+  },
+] as const;
+
+const HERO_FEATURES = [
+  "Adaptive follow-ups",
+  "Live coding",
+  "System design",
+  "Rubric scoring",
+  "Replayable transcript",
+] as const;
+
+const FAQS = [
+  {
+    q: "Is this actually voice, or just another AI chatbot?",
+    a: "It's a real voice interview. Speak naturally using your microphone, and Maven responds with low-latency voice. It manages turn-taking automatically, asks follow-up questions based on your answers, and feels much closer to a real technical screen than a text chat.",
+  },
+  {
+    q: "How realistic are the interviews?",
+    a: "Maven doesn't read from a fixed script. It adapts to your responses, asks deeper follow-up questions, changes difficulty as the interview progresses, and can challenge weak or incomplete answers—just like an experienced interviewer would.",
+  },
+  {
+    q: "Can I upload my résumé and the job description?",
+    a: "Yes. Upload your résumé or paste a job description, and Maven tailors the interview to your background, projects, skills, and target role. Personalized interviews are included on every plan.",
+  },
+  {
+    q: "What interview roles and formats are supported?",
+    a: "Practice Frontend, Backend, Full-stack, AI/ML, System Design, and Behavioral interviews—from Intern through Senior Engineer (SDE III). You can also choose a target company to better match its interview style and difficulty.",
+  },
+  {
+    q: "Does Maven include live coding?",
+    a: "Yes. Technical interviews can include live coding challenges where you solve problems while continuing the conversation over voice. The interviewer can ask clarifying questions, provide follow-ups, and evaluate both your solution and your thought process.",
+  },
+  {
+    q: "How long does an interview take?",
+    a: "Most interviews take 10–15 minutes, including a warm-up, technical questions, adaptive follow-ups, a coding round (if selected), and a wrap-up. You can also create shorter practice sessions for focused preparation.",
+  },
+  {
+    q: "How am I scored?",
+    a: "Every interview ends with a detailed report that evaluates communication, technical knowledge, problem solving, reasoning, and confidence. You'll receive rubric-based scores, actionable feedback, strengths, weak areas, and—on Pro—model answers for improvement.",
+  },
+  {
+    q: "Can I replay my interviews?",
+    a: "Yes. Every interview includes a replayable transcript so you can review exactly how you answered each question. Pro users also get unlimited interview history to track progress over time.",
+  },
+  {
+    q: "How is Maven different from ChatGPT Voice?",
+    a: "ChatGPT Voice is a general assistant—helpful, but it won't run an interview. Maven is built for one job: it drives a structured session with a phased plan, adapts difficulty as you go, challenges weak answers, runs a live coding round, and ends with a rubric-scored report on where you stand. You're not prompting a chatbot—you're being interviewed.",
+  },
+  {
+    q: "What's included in the Free plan?",
+    a: "The Free plan includes 3 complete interviews every month, including résumé tailoring, adaptive questioning, live coding, and scoring. Pro removes interview limits and adds unlimited history, model answers, and premium feedback features.",
+  },
+] as const;
+
+const cta = buttonVariants({ variant: "accent", size: "lg" });
+const navCta = buttonVariants({ variant: "accent", size: "sm" });
+const navLink =
+  "rounded text-sm text-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+const navCenterLink =
+  "rounded-full px-3.5 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-fg/5 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+
+function Wordmark() {
   return (
-    <main className="mx-auto max-w-3xl px-6 py-20">
-      <header className="flex items-center justify-between">
-        <span className="font-mono text-sm font-semibold tracking-tight">
-          maven<span className="text-teal">.ai</span>
-        </span>
-        <nav className="flex items-center gap-2">
-          <SignedOut>
-            <SignInButton mode="modal">
-              <Button variant="ghost" size="sm">
-                Sign in
-              </Button>
-            </SignInButton>
-          </SignedOut>
-          <SignedIn>
-            <Link href="/dashboard">
-              <Button variant="ghost" size="sm">
-                Dashboard
-              </Button>
-            </Link>
-          </SignedIn>
-        </nav>
-      </header>
+    <span className="flex items-center gap-2 font-display text-xl font-medium">
+      <span className="h-2 w-2 rounded-full bg-teal" aria-hidden />
+      Maven
+    </span>
+  );
+}
 
-      <section className="mt-20">
-        <h1 className="text-5xl font-semibold leading-tight tracking-tight">
-          Practice the interview, out loud.
-        </h1>
-        <p className="mt-5 max-w-xl text-xl text-ink/70">
-          A real-time voice AI runs a realistic mock interview, then writes you a
-          scored report with the transcript. No gimmicks — just reps.
-        </p>
-        <div className="mt-8 flex flex-wrap items-center gap-3">
-          <SignedOut>
-            <SignUpButton mode="modal">
-              <Button size="lg" variant="accent">
-                Try a 2-minute interview
-              </Button>
-            </SignUpButton>
-          </SignedOut>
-          <SignedIn>
-            <Link href="/dashboard">
-              <Button size="lg" variant="accent">
-                Start an interview
-              </Button>
-            </Link>
-          </SignedIn>
-          <a href="#how" className="text-sm text-ink/60 hover:text-ink">
-            How it works ↓
-          </a>
-        </div>
-      </section>
-
-      <section id="how" className="mt-24 grid gap-4">
-        {steps.map((s) => (
-          <Card key={s.n} className="flex gap-4">
-            <span className="font-mono text-sm text-teal">{s.n}</span>
-            <div>
-              <h3 className="font-medium">{s.title}</h3>
-              <p className="mt-1 text-sm text-ink/70">{s.body}</p>
-            </div>
-          </Card>
+function FooterCol({
+  title,
+  links,
+}: {
+  title: string;
+  links: { label: string; href: string }[];
+}) {
+  return (
+    <div>
+      <p className="font-mono text-[11px] uppercase tracking-widest text-muted">
+        {title}
+      </p>
+      <ul className="mt-4 flex flex-col gap-2.5 text-sm">
+        {links.map((l) => (
+          <li key={l.label}>
+            <a
+              href={l.href}
+              className="text-fg/70 transition-colors hover:text-fg"
+            >
+              {l.label}
+            </a>
+          </li>
         ))}
-      </section>
-    </main>
+      </ul>
+    </div>
+  );
+}
+
+
+export default async function LandingPage() {
+  // Region-aware pricing from geo only: IN → ₹, else $. No manual currency switch.
+  const jar = await cookies();
+  const country = (await headers()).get("x-vercel-ip-country");
+  const region = regionForCountry(country);
+  const pricing = REGION_PRICING[region];
+  const cycleRaw = jar.get("pref_cycle")?.value;
+  const cycle = cycleRaw && isCycle(cycleRaw) ? cycleRaw : "monthly";
+
+  return (
+    <div className="min-h-screen text-fg">
+      <main className="mx-auto max-w-6xl px-6 pb-20">
+        <header className="sticky top-3 z-50 mt-3">
+          <nav className="glass grid transform-gpu grid-cols-[1fr_auto_1fr] items-center gap-4 rounded-full px-4 py-2.5 sm:px-5">
+            <Link
+              href="/"
+              className="flex w-fit items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <Wordmark />
+            </Link>
+
+            <div className="hidden items-center gap-1 md:flex">
+              <a href="#how" className={navCenterLink}>
+                How it works
+              </a>
+              <a href="#pricing" className={navCenterLink}>
+                Pricing
+              </a>
+              <a href="#faq" className={navCenterLink}>
+                FAQ
+              </a>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 sm:gap-3">
+              <SignedOut>
+                <SignInButton mode="modal">
+                  <button className={`hidden sm:inline-flex ${navLink}`}>
+                    Sign in
+                  </button>
+                </SignInButton>
+                <SignUpButton mode="modal">
+                  <button className={navCta}>Start for free</button>
+                </SignUpButton>
+              </SignedOut>
+              <SignedIn>
+                <Link
+                  href="/dashboard"
+                  className={`hidden sm:inline-flex ${navLink}`}
+                >
+                  Dashboard
+                </Link>
+                <Link href="/interview/new" className={navCta}>
+                  New interview
+                </Link>
+              </SignedIn>
+              <ThemeToggle />
+            </div>
+          </nav>
+        </header>
+
+        <section className="grid items-center gap-14 pt-8 lg:grid-cols-[1.05fr_1fr] lg:pt-12">
+          <div>
+            <p className="font-mono text-xs uppercase tracking-widest text-muted">
+              Real-time voice mock interviews
+            </p>
+            <h1 className="mt-5 font-display text-[clamp(2.75rem,6.5vw,4.75rem)] font-semibold leading-[1.04] tracking-tight">
+              Practice interviews that{" "}
+              <em className="text-accent">feel&nbsp;real.</em>
+            </h1>
+            <p className="mt-6 max-w-lg text-lg leading-relaxed text-fg/70">
+              An AI interviewer that digs into your reasoning instead of reading
+              from a script. Clean turns, adaptive follow-ups, a live coding
+              round, and a report that scores how you think — ten minutes in.
+            </p>
+            <div className="mt-8 flex flex-wrap items-center gap-6">
+              <SignedOut>
+                <SignUpButton mode="modal">
+                  <button className={cta}>Start a free interview</button>
+                </SignUpButton>
+              </SignedOut>
+              <SignedIn>
+                <Link href="/interview/new" className={cta}>
+                  Start a new interview
+                </Link>
+              </SignedIn>
+              <a
+                href="#how"
+                className="text-sm text-muted underline-offset-4 transition-colors hover:text-fg hover:underline"
+              >
+                See how it works
+              </a>
+            </div>
+            <ul className="mt-10 flex flex-wrap gap-x-5 gap-y-2.5 text-sm text-fg/75">
+              {HERO_FEATURES.map((f) => (
+                <li key={f} className="flex items-center gap-1.5">
+                  <Check className="h-4 w-4 shrink-0 text-teal" aria-hidden />
+                  {f}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <HeroInterview />
+        </section>
+
+        <HowItWorks />
+
+        <section id="pricing" className="mt-28 scroll-mt-10">
+          <p className="font-mono text-xs uppercase tracking-widest text-muted">
+            Pricing
+          </p>
+          <div className="mt-6 flex flex-wrap items-end justify-between gap-4 border-t border-fg/10 pt-10">
+            <h2 className="max-w-md font-display text-3xl font-medium tracking-tight">
+              Start free. Go Pro when three a month isn&apos;t enough.
+            </h2>
+            <p className="max-w-xs text-sm leading-relaxed text-muted">
+              No seat minimums, no annual lock-in. Cancel whenever you&apos;re
+              done prepping.
+            </p>
+          </div>
+
+          <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
+            <PrefToggle
+              cookie="pref_cycle"
+              current={cycle}
+              options={[
+                { value: "monthly", label: "Monthly" },
+                { value: "annual", label: "Annual" },
+              ]}
+            />
+          </div>
+
+          <div className="mt-10">
+            <PricingGlass
+              tiers={PLANS.map((plan) => {
+                // Prices are pre-formatted with the region symbol; Free/University stay words.
+                const price =
+                  plan.name === "Free"
+                    ? "Free"
+                    : plan.name === "Pro"
+                      ? cycle === "annual"
+                        ? pricing.annual.perMonthDisplay
+                        : pricing.monthly.display
+                      : "Contact";
+                const originalPrice =
+                  plan.name === "Pro" && cycle === "annual"
+                    ? pricing.monthly.display
+                    : undefined;
+                const discountPct =
+                  plan.name === "Pro" && cycle === "annual"
+                    ? pricing.annual.savingsPct
+                    : undefined;
+                return {
+                  name: plan.name,
+                  priceMonthly: price,
+                  priceAnnual: price,
+                  description: plan.description,
+                  features: [...plan.features],
+                  isPopular: plan.isPopular,
+                  inherits: plan.inherits ?? undefined,
+                  originalPrice,
+                  discountPct,
+                };
+              })}
+              isAnnual={cycle === "annual"}
+            />
+          </div>
+        </section>
+
+        <section id="faq" className="mt-28 scroll-mt-10">
+          <h2 className="text-center font-display text-3xl font-semibold tracking-tight sm:text-4xl">
+            Frequently asked questions
+          </h2>
+          <p className="mx-auto mt-4 max-w-2xl text-balance text-center text-lg leading-relaxed text-muted">
+            Quick answers about the interview, the scoring, and your data —
+            everything worth knowing before your first session.
+          </p>
+
+          {/* Exclusive accordion: a shared `name` closes other open items — native, no JS. */}
+          <div className="glass mx-auto mt-10 max-w-3xl rounded-card px-6 py-2 sm:px-8">
+            {FAQS.map((f) => (
+              <details
+                key={f.q}
+                name="faq"
+                className="group border-b border-dotted border-fg/15 last:border-b-0"
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-6 py-4 text-base font-medium tracking-tight transition-colors hover:text-accent [&::-webkit-details-marker]:hidden">
+                  <span>{f.q}</span>
+                  <ChevronDown
+                    className="h-4 w-4 shrink-0 text-muted transition-transform duration-300 group-open:rotate-180"
+                    aria-hidden
+                  />
+                </summary>
+                <p className="pb-4 text-base leading-relaxed text-muted">
+                  {f.a}
+                </p>
+              </details>
+            ))}
+          </div>
+
+          <p className="mt-6 text-center text-muted">
+            Can&apos;t find what you&apos;re looking for? Contact our{" "}
+            <a
+              href="mailto:hello@maven.ai"
+              className="font-medium text-accent hover:underline"
+            >
+              support team
+            </a>
+            .
+          </p>
+        </section>
+
+        <footer className="mt-28 border-t border-fg/10 pt-12">
+          <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.6fr_1fr_1fr_1fr]">
+            <div>
+              <Wordmark />
+              <p className="mt-3 max-w-xs text-sm leading-relaxed text-muted">
+                Real-time voice mock interviews with a rubric-scored report.
+                Practice out loud; get better on the record.
+              </p>
+              <p className="mt-4 font-mono text-[11px] uppercase tracking-widest text-muted">
+                Made in India · for candidates everywhere
+              </p>
+            </div>
+            <FooterCol
+              title="Product"
+              links={[
+                { label: "How it works", href: "#how" },
+                { label: "Pricing", href: "#pricing" },
+                { label: "Start free", href: "/interview/new" },
+              ]}
+            />
+            <FooterCol
+              title="Support"
+              links={[
+                { label: "Contact us", href: "mailto:hello@maven.ai" },
+                {
+                  label: "Report a bug",
+                  href: "mailto:hello@maven.ai?subject=Bug%20report",
+                },
+                { label: "Security", href: "mailto:security@maven.ai" },
+              ]}
+            />
+            <FooterCol
+              title="Legal"
+              links={[
+                { label: "Privacy", href: "/privacy" },
+                { label: "Terms", href: "/terms" },
+                { label: "Data & deletion", href: "/privacy#your-data" },
+              ]}
+            />
+          </div>
+          <div className="mt-12 flex flex-wrap items-center justify-between gap-3 border-t border-fg/10 py-6 font-mono text-[11px] uppercase tracking-widest text-muted">
+            <span>© 2026 Maven AI · voice mock interviews</span>
+            <span>Your data stays yours · never sold</span>
+          </div>
+        </footer>
+      </main>
+    </div>
   );
 }

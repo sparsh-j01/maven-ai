@@ -10,11 +10,9 @@ import {
 import { type Room, RoomEvent } from "livekit-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-// §7.4 coding phase: the CodePanel (Monaco) the candidate solves in. It broadcasts
-// the editor buffer to the agent over the data channel and, on Run, asks the agent
-// to execute it in the sandbox (the agent owns run_code, §4.2) — then shows the
-// pass/fail result strip the agent publishes back. Untrusted-input note: the agent
-// re-validates and grades server-side; nothing here is trusted as a control signal.
+// The candidate's Monaco editor. The buffer is broadcast to the agent over the
+// data channel; the agent owns run_code and grades server-side — nothing here is
+// trusted as a control signal.
 
 type RunResult = {
   ok: boolean;
@@ -45,10 +43,22 @@ export function CodePanel({
   const [result, setResult] = useState<RunResult | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [editorTheme, setEditorTheme] = useState<"vs" | "vs-dark">("vs-dark");
+  useEffect(() => {
+    const root = document.documentElement;
+    const sync = () =>
+      setEditorTheme(
+        root.getAttribute("data-theme") === "dark" ? "vs-dark" : "vs",
+      );
+    sync();
+    const obs = new MutationObserver(sync);
+    obs.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => obs.disconnect();
+  }, []);
+
   const code = codeByLang[language];
 
-  // Broadcast the buffer (debounced) so run_code always grades the freshest code,
-  // including when the agent decides to run it itself.
+  // Broadcast the buffer (debounced) so run_code grades the freshest code.
   useEffect(() => {
     const t = setTimeout(
       () => publish(room, { type: "code", language, code }),
@@ -57,7 +67,6 @@ export function CodePanel({
     return () => clearTimeout(t);
   }, [room, language, code]);
 
-  // The agent runs the code in the sandbox and publishes the verdict back here.
   useEffect(() => {
     const onData = (
       payload: Uint8Array,
@@ -86,11 +95,10 @@ export function CodePanel({
   const run = useCallback(() => {
     setResult(null);
     setRunning(true);
-    // Push the latest buffer first, then ask the agent to run THIS code.
     publish(room, { type: "code", language, code });
     publish(room, { type: "run" });
     if (timer.current) clearTimeout(timer.current);
-    // Fallback: clear the spinner if the agent never answers (sandbox down).
+    // Fallback: clear the spinner if the agent never answers.
     timer.current = setTimeout(() => {
       setRunning(false);
       setResult({ ok: false, error: "no response from the sandbox" });
@@ -98,29 +106,29 @@ export function CodePanel({
   }, [room, language, code]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col border-l border-white/10 bg-ink">
-      <div className="border-b border-white/10 px-4 py-3">
+    <div className="flex h-full min-h-0 flex-col border-l border-fg/10 bg-panel/60 backdrop-blur-2xl">
+      <div className="border-b border-fg/10 px-4 py-3">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-paper">{problem.title}</span>
-          <span className="font-mono text-[10px] uppercase tracking-wide text-paper/40">
+          <span className="text-sm font-medium text-fg">{problem.title}</span>
+          <span className="font-mono text-xs uppercase tracking-wide text-muted">
             {problem.difficulty}
           </span>
         </div>
-        <p className="mt-1 text-[13px] leading-relaxed text-paper/60">
+        <p className="mt-1 text-sm leading-relaxed text-fg/70">
           {problem.prompt}
         </p>
       </div>
 
-      <div className="flex items-center gap-2 border-b border-white/10 px-4 py-2">
+      <div className="flex items-center gap-2 border-b border-fg/10 px-4 py-2">
         {LANGUAGES.map((lang) => (
           <button
             key={lang}
             type="button"
             onClick={() => setLanguage(lang)}
-            className={`rounded px-2.5 py-1 font-mono text-xs transition-colors ${
+            className={`rounded-full px-2.5 py-1 font-mono text-xs transition-colors ${
               language === lang
-                ? "bg-white/15 text-paper"
-                : "text-paper/50 hover:text-paper/80"
+                ? "bg-fg/15 text-fg"
+                : "text-muted hover:text-fg"
             }`}
           >
             {lang}
@@ -130,7 +138,7 @@ export function CodePanel({
           type="button"
           onClick={run}
           disabled={running}
-          className="ml-auto rounded bg-teal px-4 py-1 text-xs font-medium text-white transition-opacity disabled:opacity-50"
+          className="ml-auto rounded-full bg-teal px-4 py-1 text-xs font-medium text-on-accent transition-opacity disabled:opacity-50"
         >
           {running ? "Running…" : "Run"}
         </button>
@@ -139,7 +147,7 @@ export function CodePanel({
       <div className="min-h-[240px] flex-1">
         <Editor
           height="100%"
-          theme="vs-dark"
+          theme={editorTheme}
           language={language}
           value={code}
           onChange={(v) =>
@@ -156,23 +164,23 @@ export function CodePanel({
       </div>
 
       {result ? (
-        <div className="border-t border-white/10 px-4 py-3 text-xs">
+        <div className="border-t border-fg/10 px-4 py-3 text-xs">
           {!result.ok ? (
             <p className="text-danger">Couldn&apos;t run: {result.error}</p>
           ) : (
             <p className={result.passed ? "text-teal" : "text-amber"}>
               {result.passed
                 ? "Passed the test cases."
-                : `Didn't pass${result.status ? ` — ${result.status}` : ""}.`}
+                : `Didn't pass${result.status ? ` (${result.status})` : ""}.`}
             </p>
           )}
           {result.stdout ? (
-            <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-paper/60">
+            <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap font-mono text-xs text-fg/60">
               {result.stdout}
             </pre>
           ) : null}
           {result.stderr ? (
-            <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-danger/80">
+            <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap font-mono text-xs text-danger/80">
               {result.stderr}
             </pre>
           ) : null}

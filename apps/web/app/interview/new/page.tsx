@@ -5,31 +5,28 @@ import {
   type Difficulty,
   type InterviewType,
   type Seniority,
+  PLAN_LIMITS,
   seniorityDifficulty,
 } from "@maven-ai/shared";
+import { FileText, Loader2, Upload } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { UpgradeButton } from "@/components/upgrade-button";
+import { cn } from "@/lib/utils";
 
-// Milestone 4 setup: collect role / company / seniority / type so the BFF can
-// generate a phased question plan. ponytail: a single form, not the multi-step
-// wizard chrome from §7.3 — the mic check already gates entry in the room, and
-// the resume-upload step lands with RAG in milestone 7.
-
-const ROLES = [
-  "Frontend Engineer",
-  "Backend Engineer",
-  "Full Stack Engineer",
-  "Software Engineer",
+const ROLES: { value: string; label: string }[] = [
+  { value: "Frontend Engineer", label: "Frontend" },
+  { value: "Backend Engineer", label: "Backend" },
+  { value: "Software Engineer (Full Stack)", label: "Full-stack" },
+  { value: "AI Engineer", label: "AI / ML" },
 ];
 
 const SENIORITY: { value: Seniority; label: string }[] = [
   { value: "intern", label: "Intern" },
-  { value: "junior", label: "Junior" },
-  { value: "mid", label: "Mid-level" },
-  { value: "senior", label: "Senior" },
   { value: "sde1", label: "SDE 1" },
   { value: "sde2", label: "SDE 2" },
   { value: "sde3", label: "SDE 3" },
@@ -41,6 +38,12 @@ const DIFFICULTY_LABEL: Record<Difficulty, string> = {
   hard: "Hard",
 };
 
+const DIFFICULTY_STYLE: Record<Difficulty, string> = {
+  easy: "border-teal/30 bg-teal/10 text-teal",
+  medium: "border-amber/30 bg-amber/10 text-amber",
+  hard: "border-accent/30 bg-accent/10 text-accent",
+};
+
 const TYPES: { value: InterviewType; label: string }[] = [
   { value: "technical", label: "Technical" },
   { value: "behavioral", label: "Behavioral" },
@@ -48,38 +51,85 @@ const TYPES: { value: InterviewType; label: string }[] = [
   { value: "system_design", label: "System design" },
 ];
 
-// Optional target-company lever — shifts the difficulty band (product harder,
-// service easier, startup neutral) and colours the agent's tone (§5).
-const COMPANY_TYPES: { value: CompanyType; label: string }[] = [
+const COMPANY_TYPES: { value: CompanyType | ""; label: string }[] = [
+  { value: "", label: "No preference" },
   { value: "product", label: "Product-based" },
   { value: "service", label: "Service-based" },
   { value: "startup", label: "Startup" },
 ];
 
 const field =
-  "h-10 w-full rounded border border-ink/15 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-teal";
+  "h-11 w-full rounded-lg border border-fg/15 bg-fg/[0.03] px-3.5 text-sm placeholder:text-fg/35 transition-colors focus:border-fg/25 focus:outline-none focus:ring-2 focus:ring-accent/40";
 const area =
-  "w-full rounded border border-ink/15 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal";
+  "w-full rounded-lg border border-fg/15 bg-fg/[0.03] px-3.5 py-2.5 text-sm leading-relaxed placeholder:text-fg/35 transition-colors focus:border-fg/25 focus:outline-none focus:ring-2 focus:ring-accent/40";
+
+function Segmented<T extends string>({
+  value,
+  onChange,
+  options,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: string }[];
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map((o) => {
+        const active = o.value === value;
+        return (
+          <button
+            key={o.value || "none"}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(o.value)}
+            className={cn(
+              "rounded-full border px-3.5 py-1.5 text-sm transition-colors",
+              active
+                ? "border-transparent bg-fg font-medium text-ground"
+                : "border-fg/15 text-fg/70 hover:border-fg/30 hover:text-fg",
+            )}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function NewInterviewPage() {
   const router = useRouter();
   const [role, setRole] = useState("");
   const [company, setCompany] = useState("");
   const [resume, setResume] = useState("");
+  const [resumeFileName, setResumeFileName] = useState<string | null>(null);
   const [jd, setJd] = useState("");
-  const [seniority, setSeniority] = useState<Seniority>("mid");
+  const [seniority, setSeniority] = useState<Seniority>("sde1");
   const [type, setType] = useState<InterviewType>("mixed");
   const [companyTypeSel, setCompanyTypeSel] = useState<CompanyType | "">("");
+  const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [quotaHit, setQuotaHit] = useState(false);
 
-  // Upload a résumé PDF → extract its text server-side → drop it into the résumé
-  // field, where it flows through the same tailoring path as pasted text.
-  async function onResumeFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // let the same file be re-selected after an edit
+  const difficulty = seniorityDifficulty(seniority, companyTypeSel || undefined);
+
+  // Extract the PDF text server-side, then drop it into the résumé field. Client
+  // checks type+size for fast feedback; the route enforces both again.
+  async function handleFile(file: File | undefined) {
     if (!file) return;
+    const isPdf =
+      file.type === "application/pdf" ||
+      file.name.toLowerCase().endsWith(".pdf");
+    if (!isPdf) {
+      setError("Please upload a PDF file.");
+      return;
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      setError("That PDF is over 3MB — try a smaller file.");
+      return;
+    }
     setParsing(true);
     setError(null);
     try {
@@ -95,6 +145,7 @@ export default function NewInterviewPage() {
       }
       const { text } = (await res.json()) as { text: string };
       setResume(text);
+      setResumeFileName(file.name);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't read that PDF");
     } finally {
@@ -119,6 +170,11 @@ export default function NewInterviewPage() {
           jdText: jd.trim() || undefined,
         }),
       });
+      if (res.status === 402) {
+        setQuotaHit(true);
+        setLoading(false);
+        return;
+      }
       if (!res.ok) throw new Error(await res.text());
       const { id } = (await res.json()) as { id: string };
       router.push(`/interview/${id}`);
@@ -129,167 +185,220 @@ export default function NewInterviewPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-lg flex-col justify-center px-6">
-      <Card>
-        <h1 className="text-xl font-semibold tracking-tight">Set up your interview</h1>
-        <p className="mt-2 text-sm text-ink/70">
-          Pick a role and format — we&apos;ll build a question plan, then drop you
+    <main className="mx-auto max-w-2xl px-6 pb-16">
+      <TopBar />
+
+      <Link
+        href="/dashboard"
+        className="mt-8 inline-flex items-center gap-1 font-mono text-xs uppercase tracking-widest text-fg/50 transition-colors hover:text-fg"
+      >
+        ← Dashboard
+      </Link>
+
+      <Card className="mt-4 p-7 sm:p-9">
+        <p className="font-mono text-xs uppercase tracking-widest text-fg/50">
+          New session
+        </p>
+        <h1 className="mt-2 font-display font-medium text-3xl tracking-tight">
+          Set up your interview
+        </h1>
+        <p className="mt-3 max-w-md text-sm leading-relaxed text-fg/70">
+          Pick a role and format; we&apos;ll build a question plan, then drop you
           into a live room. Hold the button (or Space) to talk.
         </p>
 
         <form
-          className="mt-6 flex flex-col gap-4"
+          className="mt-8 flex flex-col gap-7"
           onSubmit={(e) => {
             e.preventDefault();
             void start();
           }}
         >
-          <label className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-2">
             <span className="text-sm font-medium">Role</span>
-            <input
-              className={field}
-              list="role-options"
-              placeholder="e.g. Frontend Engineer"
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              required
-              autoFocus
-            />
-            <datalist id="role-options">
-              {ROLES.map((r) => (
-                <option key={r} value={r} />
-              ))}
-            </datalist>
-          </label>
+            <Segmented value={role} onChange={setRole} options={ROLES} />
+          </div>
 
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">
-              Target company <span className="text-ink/40">(optional)</span>
-            </span>
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-medium">Seniority</span>
+            <Segmented
+              value={seniority}
+              onChange={setSeniority}
+              options={SENIORITY}
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-medium">Format</span>
+            <Segmented value={type} onChange={setType} options={TYPES} />
+          </div>
+
+          <div className="flex flex-col gap-2.5">
+            <label htmlFor="company" className="text-sm font-medium">
+              Target company <span className="text-fg/40">(optional)</span>
+            </label>
             <input
+              id="company"
               className={field}
               placeholder="e.g. Stripe"
               value={company}
               onChange={(e) => setCompany(e.target.value)}
             />
-          </label>
-
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">
-              Target company type <span className="text-ink/40">(optional)</span>
-            </span>
-            <select
-              className={field}
+            <Segmented
               value={companyTypeSel}
-              onChange={(e) => setCompanyTypeSel(e.target.value as CompanyType | "")}
-            >
-              <option value="">No preference</option>
-              {COMPANY_TYPES.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </label>
+              onChange={setCompanyTypeSel}
+              options={COMPANY_TYPES}
+            />
+          </div>
 
-          <label className="flex flex-col gap-1.5">
-            <span className="flex items-center justify-between text-sm font-medium">
-              <span>
-                Resume <span className="text-ink/40">(optional)</span>
-              </span>
-              <span className="cursor-pointer text-xs font-normal text-teal hover:underline">
-                {parsing ? "Reading PDF…" : "Upload PDF (max 3MB)"}
-                <input
-                  type="file"
-                  accept="application/pdf"
-                  className="sr-only"
-                  disabled={parsing}
-                  onChange={onResumeFile}
-                />
-              </span>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span
+              className={cn(
+                "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium",
+                DIFFICULTY_STYLE[difficulty],
+              )}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden />
+              {DIFFICULTY_LABEL[difficulty]} interview
             </span>
+            <span className="text-xs text-fg/45">
+              Tuned to your level
+              {companyTypeSel ? " and target company" : ""}.
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3 pt-1">
+            <span className="font-mono text-[11px] uppercase tracking-widest text-fg/45">
+              Tailoring
+            </span>
+            <span className="h-px flex-1 bg-fg/10" aria-hidden />
+            <span className="text-[11px] text-fg/40">optional</span>
+          </div>
+
+          <div className="flex flex-col gap-2.5">
+            <label htmlFor="resume-text" className="text-sm font-medium">
+              Resume <span className="text-fg/40">(optional)</span>
+            </label>
+
+            {/* The label wraps only the file input, so the textarea below stays independently focusable. */}
+            <label
+              onDragOver={(e) => {
+                e.preventDefault();
+                if (!parsing) setDragging(true);
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragging(false);
+                void handleFile(e.dataTransfer.files?.[0]);
+              }}
+              className={cn(
+                "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-6 py-7 text-center transition-colors",
+                dragging
+                  ? "border-accent bg-accent/[0.06]"
+                  : "border-fg/20 hover:border-fg/35 hover:bg-fg/[0.02]",
+                parsing && "pointer-events-none opacity-70",
+              )}
+            >
+              <input
+                type="file"
+                accept="application/pdf"
+                className="sr-only"
+                disabled={parsing}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = ""; // allow re-selecting the same file
+                  void handleFile(f);
+                }}
+              />
+              {parsing ? (
+                <>
+                  <Loader2
+                    className="h-5 w-5 animate-spin text-accent"
+                    aria-hidden
+                  />
+                  <span className="text-sm font-medium">Reading your PDF…</span>
+                </>
+              ) : resumeFileName ? (
+                <>
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-teal/10 text-teal">
+                    <FileText className="h-5 w-5" aria-hidden />
+                  </span>
+                  <span className="max-w-full truncate text-sm font-medium">
+                    {resumeFileName}
+                  </span>
+                  <span className="text-xs text-fg/50">
+                    Parsed — click to replace
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-fg/[0.06] text-fg/55">
+                    <Upload className="h-5 w-5" aria-hidden />
+                  </span>
+                  <span className="text-sm font-medium">
+                    Drop your resume PDF here, or{" "}
+                    <span className="text-accent">browse</span>
+                  </span>
+                  <span className="text-xs text-fg/50">
+                    PDF · max 3MB · we extract the text
+                  </span>
+                </>
+              )}
+            </label>
+
             <textarea
+              id="resume-text"
               className={area}
               rows={4}
               maxLength={10000}
-              placeholder="Paste your resume, or upload a PDF — we'll tailor questions to your background."
+              placeholder="…or paste your resume text here. We'll tailor questions to your background."
               value={resume}
               onChange={(e) => setResume(e.target.value)}
             />
-          </label>
+          </div>
 
           <label className="flex flex-col gap-1.5">
             <span className="text-sm font-medium">
-              Job description <span className="text-ink/40">(optional)</span>
+              Job description <span className="text-fg/40">(optional)</span>
             </span>
             <textarea
               className={area}
               rows={4}
               maxLength={5000}
-              placeholder="Paste the role's job description — we'll aim questions at it."
+              placeholder="Paste the role's job description. We'll aim questions at it."
               value={jd}
               onChange={(e) => setJd(e.target.value)}
             />
           </label>
 
-          <div className="grid grid-cols-2 gap-4">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">Seniority</span>
-              <select
-                className={field}
-                value={seniority}
-                onChange={(e) => setSeniority(e.target.value as Seniority)}
-              >
-                {SENIORITY.map((s) => (
-                  <option key={s.value} value={s.value}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">Format</span>
-              <select
-                className={field}
-                value={type}
-                onChange={(e) => setType(e.target.value as InterviewType)}
-              >
-                {TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <p className="text-xs text-ink/60">
-            This interview will be{" "}
-            <span className="font-medium text-ink">
-              {DIFFICULTY_LABEL[seniorityDifficulty(seniority, companyTypeSel || undefined)]}
-            </span>
-            .
-          </p>
-
           <Button
             type="submit"
             variant="accent"
             size="lg"
-            className="mt-2"
+            className="mt-1 w-full"
             disabled={loading || role.trim().length === 0}
           >
             {loading ? "Building your plan…" : "Start interview"}
           </Button>
-          {error ? <p className="text-sm text-danger">{error}</p> : null}
+          {quotaHit ? (
+            <div className="rounded-lg border border-teal/25 bg-teal/[0.06] p-4">
+              <p className="text-sm font-medium">
+                You&apos;ve used all {PLAN_LIMITS.free.monthlyInterviews} free
+                interviews this month.
+              </p>
+              <p className="mt-1 text-sm text-fg/70">
+                Pro includes unlimited interviews. Your reports and transcripts
+                stay either way.
+              </p>
+              <div className="mt-3">
+                <UpgradeButton />
+              </div>
+            </div>
+          ) : error ? (
+            <p className="text-sm text-danger">{error}</p>
+          ) : null}
         </form>
-
-        <Link
-          href="/dashboard"
-          className="mt-4 block text-sm text-ink/50 hover:text-ink"
-        >
-          Back to dashboard
-        </Link>
       </Card>
     </main>
   );

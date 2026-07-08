@@ -4,13 +4,14 @@ import {
   RoomAudioRenderer,
   RoomContext,
   useLocalParticipant,
+  useTrackVolume,
   useTranscriptions,
   useVoiceAssistant,
 } from "@livekit/components-react";
 import { getCodingProblem } from "@maven-ai/shared";
 import { Room, RoomEvent } from "livekit-client";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CodePanel } from "@/components/code-panel";
 import { Button } from "@/components/ui/button";
 
@@ -24,10 +25,26 @@ type ConnState =
   | "ended"
   | "error";
 
-// Milestone 3: the live voice room (dark theme). Connect to the room, publish
-// the mic only on push-to-talk, and run the turn-based loop against the
-// interviewer agent. No barge-in is enforced agent-side
-// (allow_interruptions=False); the UI makes turn ownership obvious. §7.4.
+const STATE_LABEL: Record<ConnState, string> = {
+  "checking-mic": "Checking mic…",
+  "mic-denied": "Mic blocked",
+  connecting: "Connecting…",
+  live: "Live",
+  reconnecting: "Reconnecting…",
+  disconnected: "Disconnected",
+  ended: "Ended",
+  error: "Connection failed",
+};
+
+const fmtElapsed = (s: number) =>
+  `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+// True while focus is in a text field or the Monaco editor — Space must type
+// a space there, not trigger push-to-talk.
+const inEditable = (t: EventTarget | null) =>
+  t instanceof HTMLElement &&
+  !!t.closest("input, textarea, [contenteditable]");
+
 export default function InterviewRoomPage() {
   const { id } = useParams<{ id: string }>();
   const room = useMemo(() => new Room(), []);
@@ -35,27 +52,41 @@ export default function InterviewRoomPage() {
   const [detail, setDetail] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [phase, setPhase] = useState<string | null>(null);
-  // The agent names the active coding problem in its phase signal; look it up in
-  // the shared bank (public half only — no hidden tests reach the client).
+  // Look the coding problem up in the shared bank — public half only, no hidden tests reach the client.
   const [codingProblemId, setCodingProblemId] = useState<string | null>(null);
   const codingProblem = codingProblemId
     ? (getCodingProblem(codingProblemId) ?? null)
     : null;
+  const [seconds, setSeconds] = useState(0);
+  const [confirmLeave, setConfirmLeave] = useState(false);
+
+  const started = state === "live" || state === "reconnecting";
+  useEffect(() => {
+    if (!started) return;
+    const t = setInterval(() => setSeconds((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [started]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !inEditable(e.target)) setConfirmLeave(true);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     const onReconnecting = () => setState("reconnecting");
     const onReconnected = () => setState("live");
     const onDisconnected = () => setState("disconnected");
-    // The agent publishes {type:"ended"} over the data channel when it calls
-    // end_interview (§7.4) — flip to the ended state so we can offer the report.
+    // The agent signals over the data channel: {type:"ended"} when it ends the
+    // interview, {type:"phase"} to announce the phase and active coding problem.
     const onData = (payload: Uint8Array) => {
       try {
         const msg = JSON.parse(new TextDecoder().decode(payload));
         if (msg?.type === "ended") setState("ended");
         else if (msg?.type === "phase") {
-          // The agent announces each phase (and the active problem) so the editor
-          // shows for the coding round and switches between the two problems.
           setPhase(msg.phase ?? null);
           if (msg.phase === "coding" && msg.problemId)
             setCodingProblemId(msg.problemId);
@@ -71,16 +102,14 @@ export default function InterviewRoomPage() {
       .on(RoomEvent.DataReceived, onData);
 
     (async () => {
-      // Mic pre-check (gated, §7.3): confirm permission before joining so the
-      // candidate never lands in the room with an agent that can't hear them.
-      // ponytail: permission gate only; the live input-level meter is part of
-      // the full setup wizard in milestone 4.
+      // Confirm mic permission before joining so the candidate never lands in a
+      // room with an agent that can't hear them.
       setState("checking-mic");
       try {
         const probe = await navigator.mediaDevices.getUserMedia({
           audio: true,
         });
-        probe.getTracks().forEach((t) => t.stop()); // release; PTT re-acquires
+        probe.getTracks().forEach((t) => t.stop());
       } catch {
         if (!cancelled) setState("mic-denied");
         return;
@@ -99,7 +128,6 @@ export default function InterviewRoomPage() {
         };
         await room.connect(serverUrl, token);
         if (cancelled) return;
-        // Mic stays off until the candidate holds to talk (push-to-talk).
         await room.localParticipant.setMicrophoneEnabled(false);
         setState("live");
       } catch (e) {
@@ -122,22 +150,73 @@ export default function InterviewRoomPage() {
 
   return (
     <RoomContext.Provider value={room}>
-      <main className="flex min-h-screen flex-col bg-ink text-paper">
-        <header className="flex items-center justify-between border-b border-white/10 px-6 py-4">
-          <span className="font-mono text-sm">interview · {id.slice(0, 8)}</span>
-          <span
-            className={`font-mono text-xs uppercase tracking-wide ${
-              state === "live" || state === "ended"
-                ? "text-teal"
-                : state === "error" ||
-                    state === "disconnected" ||
-                    state === "mic-denied"
-                  ? "text-danger"
-                  : "text-amber"
-            }`}
-          >
-            {state}
-            {detail ? ` — ${detail}` : ""}
+      <main className="flex min-h-screen flex-col text-fg">
+        <header className="flex items-center justify-between gap-4 border-b border-fg/10 px-6 py-4">
+          <span className="flex min-w-0 items-center gap-2 font-display text-lg font-medium">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-teal" aria-hidden />
+            Maven
+            {phase && started ? (
+              <span className="ml-2 truncate rounded-full border border-fg/15 px-2.5 py-0.5 font-mono text-xs uppercase tracking-widest text-fg/60">
+                {phase.replace(/_/g, " ")}
+              </span>
+            ) : (
+              <span className="ml-1 truncate font-mono text-xs uppercase tracking-widest text-fg/40">
+                Mock interview
+              </span>
+            )}
+          </span>
+          <span className="flex shrink-0 items-center gap-4">
+            {state === "live" ? (
+              <span className="flex items-center gap-2 font-mono text-xs text-teal">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-teal" aria-hidden />
+                {fmtElapsed(seconds)}
+              </span>
+            ) : (
+              <span
+                className={`font-mono text-xs uppercase tracking-wide ${
+                  state === "ended"
+                    ? "text-teal"
+                    : state === "error" ||
+                        state === "disconnected" ||
+                        state === "mic-denied"
+                      ? "text-danger"
+                      : "text-amber"
+                }`}
+              >
+                {STATE_LABEL[state]}
+                {state === "error" && detail ? `: ${detail}` : ""}
+              </span>
+            )}
+            {started &&
+              (confirmLeave ? (
+                <span className="flex items-center gap-3 text-sm">
+                  <span className="text-fg/60">Leave the interview?</span>
+                  <button
+                    type="button"
+                    className="font-medium text-danger transition-colors hover:text-danger/80"
+                    onClick={() => {
+                      window.location.href = "/dashboard";
+                    }}
+                  >
+                    Leave
+                  </button>
+                  <button
+                    type="button"
+                    className="text-fg/60 transition-colors hover:text-fg"
+                    onClick={() => setConfirmLeave(false)}
+                  >
+                    Stay
+                  </button>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="text-sm text-fg/50 transition-colors hover:text-fg"
+                  onClick={() => setConfirmLeave(true)}
+                >
+                  Leave
+                </button>
+              ))}
           </span>
         </header>
 
@@ -147,6 +226,8 @@ export default function InterviewRoomPage() {
           <DisconnectedChoice />
         ) : state === "mic-denied" ? (
           <MicDenied onRetry={() => setAttempt((a) => a + 1)} />
+        ) : state === "error" ? (
+          <ConnectFailed detail={detail} onRetry={() => setAttempt((a) => a + 1)} />
         ) : (
           (() => {
             const coding = phase === "coding" && !!codingProblem;
@@ -154,6 +235,7 @@ export default function InterviewRoomPage() {
               <div className="flex min-h-0 flex-1 flex-col md:flex-row">
                 <VoiceRoom
                   connecting={state !== "live" && state !== "reconnecting"}
+                  reconnecting={state === "reconnecting"}
                   compact={coding}
                 />
                 {coding && codingProblem ? (
@@ -170,7 +252,6 @@ export default function InterviewRoomPage() {
           })()
         )}
 
-        {/* Plays the interviewer's TTS audio coming from the room. */}
         <RoomAudioRenderer />
       </main>
     </RoomContext.Provider>
@@ -179,35 +260,40 @@ export default function InterviewRoomPage() {
 
 function VoiceRoom({
   connecting,
+  reconnecting = false,
   compact = false,
 }: {
   connecting: boolean;
+  reconnecting?: boolean;
   compact?: boolean;
 }) {
-  const { state: agentState } = useVoiceAssistant();
+  const { state: agentState, audioTrack } = useVoiceAssistant();
   const { localParticipant } = useLocalParticipant();
   const transcriptions = useTranscriptions();
+  const agentVolume = useTrackVolume(audioTrack);
   const [talking, setTalking] = useState(false);
+  const transcriptRef = useRef<HTMLUListElement>(null);
 
-  // Push-to-talk is only live when the agent is listening for your answer —
-  // you physically cannot interrupt while the interviewer is speaking.
-  const locked = connecting || agentState !== "listening";
+  // Push-to-talk is only live when the agent is listening — you can't interrupt
+  // while the interviewer speaks, and a reconnecting room won't pretend to hear you.
+  const locked = connecting || reconnecting || agentState !== "listening";
 
   function setMic(on: boolean) {
     setTalking(on);
     void localParticipant.setMicrophoneEnabled(on);
   }
 
-  // Hold Space to talk (only on your turn).
+  // Hold Space to talk (only on your turn); skipped while typing so the coding
+  // round's spacebar belongs to the editor.
   useEffect(() => {
     function down(e: KeyboardEvent) {
-      if (e.code === "Space" && !e.repeat && !locked) {
+      if (e.code === "Space" && !e.repeat && !locked && !inEditable(e.target)) {
         e.preventDefault();
         setMic(true);
       }
     }
     function up(e: KeyboardEvent) {
-      if (e.code === "Space") {
+      if (e.code === "Space" && !inEditable(e.target)) {
         e.preventDefault();
         setMic(false);
       }
@@ -221,9 +307,15 @@ function VoiceRoom({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locked]);
 
-  const status =
-    agentState === "speaking"
-      ? "Interviewer speaking — listen"
+  useEffect(() => {
+    const el = transcriptRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [transcriptions.length]);
+
+  const status = reconnecting
+    ? "Reconnecting…"
+    : agentState === "speaking"
+      ? "Interviewer speaking"
       : agentState === "thinking"
         ? "Thinking…"
         : agentState === "listening"
@@ -232,51 +324,46 @@ function VoiceRoom({
             ? "Connecting…"
             : "Waiting for interviewer…";
 
-  // SpeakerOrb — the visual truth of who has the floor (§6.2, §7.4).
-  // ponytail: turn-state ring now; TTS-amplitude reactivity (BarVisualizer +
-  // @livekit/components-styles) is the polish upgrade in milestone 8.
-  const orb =
-    agentState === "speaking"
-      ? "border-paper/70 animate-pulse shadow-[0_0_80px_-20px_rgba(250,250,247,0.7)]"
-      : agentState === "thinking"
-        ? "border-amber animate-pulse shadow-[0_0_80px_-20px_#E0A100]"
-        : agentState === "listening"
-          ? "border-teal shadow-[0_0_90px_-20px_#0FA37F]"
-          : "border-white/20";
-
   return (
     <div
       className={`mx-auto flex w-full flex-1 flex-col items-center px-6 py-10 ${
         compact ? "max-w-md" : "max-w-2xl"
       }`}
     >
-      <div
-        className={`rounded-full border-2 transition-all duration-300 ${
-          compact ? "h-24 w-24" : "h-40 w-40"
-        } ${orb}`}
-        aria-hidden
-      />
-      <p className="mt-6 text-sm text-paper/70" aria-live="polite">
+      <SpeakingBlob state={agentState} volume={agentVolume} compact={compact} />
+      <p className="mt-6 text-sm text-fg/70" aria-live="polite">
         {status}
       </p>
 
-      {/* LiveTranscript — both speakers, current line last (auto-scrolls). */}
-      <ul className="mt-8 flex w-full flex-1 flex-col gap-3 overflow-y-auto">
+      <ul
+        ref={transcriptRef}
+        className="mt-8 flex w-full flex-1 flex-col gap-3 overflow-y-auto"
+      >
         {transcriptions.map((t, i) => {
           const mine =
             t.participantInfo?.identity === localParticipant.identity;
+          const current = i === transcriptions.length - 1;
           return (
             <li key={i} className={mine ? "text-right" : "text-left"}>
-              <span className="text-xs uppercase tracking-wide text-paper/40">
+              <span
+                className={`font-mono text-xs uppercase tracking-widest ${
+                  mine ? "text-teal" : "text-fg/40"
+                }`}
+              >
                 {mine ? "You" : "Interviewer"}
               </span>
-              <p className="text-[18px] leading-relaxed">{t.text}</p>
+              <p
+                className={`mt-0.5 font-serif text-lg leading-relaxed ${
+                  current ? "text-fg" : "text-fg/60"
+                }`}
+              >
+                {t.text}
+              </p>
             </li>
           );
         })}
       </ul>
 
-      {/* Push-to-talk — disabled while the interviewer speaks (no interrupting). */}
       <button
         type="button"
         disabled={locked}
@@ -285,30 +372,89 @@ function VoiceRoom({
           setMic(true);
         }}
         onPointerUp={() => setMic(false)}
-        className={`mt-8 h-14 rounded-full px-8 font-medium transition-colors disabled:opacity-40 ${
+        className={`mt-8 h-14 rounded-full px-8 font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal disabled:opacity-40 ${
           talking
-            ? "bg-teal text-white"
-            : "bg-white/10 text-paper hover:bg-white/15"
+            ? "bg-teal text-on-accent"
+            : "bg-fg/10 text-fg hover:bg-fg/15"
         }`}
       >
         {locked
           ? "Listen…"
           : talking
-            ? "Listening — release to send"
+            ? "Listening… release to send"
             : "Hold to talk (or Space)"}
       </button>
     </div>
   );
 }
 
+function SpeakingBlob({
+  state,
+  volume,
+  compact = false,
+}: {
+  state: string;
+  volume: number;
+  compact?: boolean;
+}) {
+  const tone =
+    state === "speaking"
+      ? "--accent"
+      : state === "listening"
+        ? "--teal"
+        : state === "thinking"
+          ? "--amber"
+          : "--muted";
+  // Only the interviewer's voice drives the swell; clamp so a loud spike can't
+  // blow out the layout.
+  const speaking = state === "speaking";
+  const swell = speaking ? 1 + Math.min(Math.max(volume, 0), 1) * 0.3 : 1;
+  const size = compact ? 156 : 232;
+
+  return (
+    <div
+      className="relative flex shrink-0 items-center justify-center"
+      style={{ width: size, height: size }}
+      aria-hidden
+    >
+      <div
+        className={`absolute inset-0 ${speaking ? "" : "blob-breathe"}`}
+        style={{
+          borderRadius: "46% 54% 51% 49% / 54% 47% 53% 46%",
+          background: `radial-gradient(circle at 50% 45%, rgb(var(${tone}) / 0.30), transparent 68%)`,
+          transform: `scale(${swell})`,
+          transition: "transform 90ms ease-out, background 300ms ease",
+        }}
+      />
+      <div
+        className="absolute"
+        style={{
+          inset: "16%",
+          borderRadius: "54% 46% 49% 51% / 47% 54% 46% 53%",
+          background: `radial-gradient(circle at 50% 42%, rgb(var(${tone}) / 0.55), rgb(var(${tone}) / 0.10) 72%)`,
+          transform: `scale(${speaking ? swell : 1})`,
+          transition: "transform 90ms ease-out, background 300ms ease",
+        }}
+      />
+      <div
+        className="relative rounded-full"
+        style={{
+          width: "30%",
+          height: "30%",
+          background: `rgb(var(${tone}) / 0.92)`,
+          boxShadow: `0 0 44px rgb(var(${tone}) / 0.45)`,
+        }}
+      />
+    </div>
+  );
+}
+
 function Ended({ id }: { id: string }) {
-  // §7.4 ended: a calm confirmation that hands off to the report, which kicks
-  // scoring and shows progress. The transcript is kept either way.
   return (
     <div className="m-auto flex max-w-sm flex-col items-center gap-5 px-6 text-center">
       <div className="h-3 w-3 rounded-full bg-teal" />
-      <p className="text-paper/80">
-        That&apos;s a wrap — nice work. We&apos;re scoring your interview now.
+      <p className="text-fg/80">
+        That&apos;s a wrap, nice work. We&apos;re scoring your interview now.
       </p>
       <Button
         variant="accent"
@@ -323,13 +469,10 @@ function Ended({ id }: { id: string }) {
 }
 
 function DisconnectedChoice() {
-  // §7.4 disconnected: an explicit choice, never a silent drop. Continue rejoins
-  // the same room; start fresh begins a new interview. ponytail: full transcript
-  // rehydrate + agent-cursor resume arrives with persistence in milestone 4/5.
   return (
     <div className="m-auto flex max-w-sm flex-col items-center gap-5 px-6 text-center">
       <div className="h-3 w-3 rounded-full bg-danger" />
-      <p className="text-paper/80">
+      <p className="text-fg/80">
         You were disconnected. Your transcript is kept.
       </p>
       <div className="flex gap-3">
@@ -338,7 +481,7 @@ function DisconnectedChoice() {
         </Button>
         <Button
           variant="outline"
-          className="border-white/20 text-paper hover:bg-white/10"
+          className="border-fg/20 text-fg hover:bg-fg/10"
           onClick={() => {
             window.location.href = "/interview/new";
           }}
@@ -350,14 +493,37 @@ function DisconnectedChoice() {
   );
 }
 
-function MicDenied({ onRetry }: { onRetry: () => void }) {
-  // §7.3 permission denied: an explicit recovery card, never a dead end.
+function ConnectFailed({
+  detail,
+  onRetry,
+}: {
+  detail: string | null;
+  onRetry: () => void;
+}) {
   return (
     <div className="m-auto flex max-w-sm flex-col items-center gap-5 px-6 text-center">
       <div className="h-3 w-3 rounded-full bg-danger" />
       <div>
-        <p className="text-paper">Microphone access is blocked.</p>
-        <p className="mt-2 text-sm text-paper/60">
+        <p className="text-fg">Couldn&apos;t connect to the interview.</p>
+        <p className="mt-2 text-sm text-fg/60">
+          {detail ?? "The room didn't answer."} Your interview isn&apos;t lost;
+          retry to join again.
+        </p>
+      </div>
+      <Button variant="accent" onClick={onRetry}>
+        Retry connection
+      </Button>
+    </div>
+  );
+}
+
+function MicDenied({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="m-auto flex max-w-sm flex-col items-center gap-5 px-6 text-center">
+      <div className="h-3 w-3 rounded-full bg-danger" />
+      <div>
+        <p className="text-fg">Microphone access is blocked.</p>
+        <p className="mt-2 text-sm text-fg/60">
           The interviewer needs your mic to hear your answers. Allow microphone
           access for this site (via the lock or camera icon in your
           browser&apos;s address bar), then retry.

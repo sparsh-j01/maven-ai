@@ -5,9 +5,7 @@ import {
   type RubricScores,
 } from "@maven-ai/shared";
 
-// The rubric radar (§6.3, §7.5): the glanceable shape of strengths and gaps.
-// Hand-rolled SVG over shared/radar geometry — no chart dependency for five
-// fixed axes. Pure render, so it stays a server component.
+// Hand-rolled SVG over shared/radar geometry — no chart dep; pure render (server component).
 
 const SIZE = 280;
 const C = SIZE / 2;
@@ -54,7 +52,7 @@ export function RubricRadar({ scores }: { scores: RubricScores }) {
           key={f}
           points={pointsToPath(ring(f))}
           fill="none"
-          className="stroke-ink/10"
+          className="stroke-fg/10"
           strokeWidth={1}
         />
       ))}
@@ -65,7 +63,7 @@ export function RubricRadar({ scores }: { scores: RubricScores }) {
           y1={C}
           x2={p.x}
           y2={p.y}
-          className="stroke-ink/10"
+          className="stroke-fg/10"
           strokeWidth={1}
         />
       ))}
@@ -88,7 +86,7 @@ export function RubricRadar({ scores }: { scores: RubricScores }) {
             y={p.y}
             textAnchor={anchor}
             dominantBaseline="middle"
-            className="fill-ink/70 text-[9px] font-medium"
+            className="fill-fg/70 text-[9px] font-medium"
           >
             {LABELS[RUBRIC_DIMENSIONS[i]!] ?? RUBRIC_DIMENSIONS[i]}
           </text>
