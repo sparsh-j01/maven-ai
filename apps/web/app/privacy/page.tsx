@@ -106,8 +106,8 @@ export default function PrivacyPage() {
               You can view your interviews and reports in your dashboard. You can
               request a copy of your data, or deletion of your account and its
               content, by emailing{" "}
-              <a className="text-teal hover:underline" href="mailto:privacy@maven.ai">
-                privacy@maven.ai
+              <a className="text-teal hover:underline" href="mailto:sparshjjwala.work@gmail.com">
+                sparshjjwala.work@gmail.com
               </a>{" "}
               or from the{" "}
               <Link className="text-teal hover:underline" href="/delete-account">
@@ -170,8 +170,8 @@ export default function PrivacyPage() {
           <Section title="Contact">
             <p>
               Questions about privacy? Email{" "}
-              <a className="text-teal hover:underline" href="mailto:privacy@maven.ai">
-                privacy@maven.ai
+              <a className="text-teal hover:underline" href="mailto:sparshjjwala.work@gmail.com">
+                sparshjjwala.work@gmail.com
               </a>
               .
             </p>

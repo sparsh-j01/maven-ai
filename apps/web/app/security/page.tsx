@@ -112,8 +112,8 @@ export default function SecurityPage() {
           <Section title="Reporting a vulnerability">
             <p>
               Found a security issue? Please email{" "}
-              <a className={A} href="mailto:security@maven.ai">
-                security@maven.ai
+              <a className={A} href="mailto:sparshjjwala.work@gmail.com">
+                sparshjjwala.work@gmail.com
               </a>{" "}
               with the details and steps to reproduce. We&apos;ll acknowledge
               your report, keep you updated, and credit you if you&apos;d like

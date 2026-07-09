@@ -439,7 +439,7 @@ export default async function LandingPage() {
           <p className="mt-6 text-center text-muted">
             Can&apos;t find what you&apos;re looking for? Contact our{" "}
             <a
-              href="mailto:hello@maven.ai"
+              href="mailto:sparshjjwala.work@gmail.com"
               className="font-medium text-accent hover:underline"
             >
               support team
@@ -495,11 +495,11 @@ export default async function LandingPage() {
             <FooterCol
               title="Support"
               links={[
-                { label: "Contact", href: "mailto:hello@maven.ai" },
+                { label: "Contact", href: "mailto:sparshjjwala.work@gmail.com" },
                 { label: "Security", href: "/security" },
                 {
                   label: "Feedback",
-                  href: "mailto:hello@maven.ai?subject=Feedback",
+                  href: "mailto:sparshjjwala.work@gmail.com?subject=Feedback",
                 },
               ]}
             />
