@@ -38,6 +38,9 @@ function contentSecurityPolicy(): string {
 }
 
 const nextConfig: NextConfig = {
+  // Hide the Next.js dev indicator (the "N"/route-status badge in the corner).
+  devIndicators: { appIsrStatus: false, buildActivity: false },
+
   transpilePackages: ["@maven-ai/db", "@maven-ai/shared"],
 
   // unpdf (pdf.js) runs in the résumé-parse worker, not the Next bundle — keep it

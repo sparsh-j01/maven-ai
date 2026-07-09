@@ -53,10 +53,11 @@ export default function TermsPage() {
 
           <Section title="Your account">
             <p>
-              You must provide accurate information and keep your login secure.
-              You&apos;re responsible for activity under your account. You must be
-              old enough to form a binding contract in your jurisdiction. Don&apos;t
-              create multiple accounts to get around free-tier limits.
+              You must be at least 13 years old (and old enough to form a
+              binding contract in your jurisdiction) to use Maven. You must
+              provide accurate information and keep your login secure. You&apos;re
+              responsible for activity under your account. Don&apos;t create
+              multiple accounts to get around free-tier limits.
             </p>
           </Section>
 
@@ -79,12 +80,15 @@ export default function TermsPage() {
             </p>
           </Section>
 
-          <Section title="Your content">
+          <Section title="Intellectual property">
             <p>
               You keep ownership of the résumé text, answers, and audio you
               provide. You grant us the limited license needed to run your
               interview, generate and store your report, and operate the service.
-              See our{" "}
+              Maven itself — the software, name, branding, rubric, and the
+              question and scoring systems behind it — remains our property;
+              these terms grant you no rights to it beyond using the service. See
+              our{" "}
               <Link className="text-teal hover:underline" href="/privacy">
                 Privacy Policy
               </Link>{" "}

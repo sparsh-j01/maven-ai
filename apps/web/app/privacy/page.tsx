@@ -82,10 +82,22 @@ export default function PrivacyPage() {
               Only the service providers (&ldquo;subprocessors&rdquo;) that make
               Maven run — under contract, for these purposes only: authentication
               (Clerk), real-time voice and speech (LiveKit, Deepgram, Google),
-              question and scoring models (Google), payments (Stripe), file and
-              database storage (Cloudflare, Neon), and error/usage monitoring
-              (Sentry, PostHog, Langfuse). We do not sell personal data or share
-              it for advertising.
+              question and scoring models (Google), payments (Stripe,
+              Razorpay), file and database storage (Cloudflare, Neon), and
+              error/usage monitoring (Sentry, PostHog, Langfuse). We do not sell
+              personal data or share it for advertising.
+            </p>
+          </Section>
+
+          <Section title="Cookies">
+            <p>
+              We use a small number of essential cookies to keep you signed in
+              (set by our auth provider) and to remember preferences like your
+              theme and billing region. Product analytics may set cookies to
+              measure usage in aggregate. We do not use advertising or
+              cross-site tracking cookies. You can clear or block cookies in your
+              browser, though signing in won&apos;t work without the essential
+              ones.
             </p>
           </Section>
 
