@@ -11,9 +11,10 @@ transcript.
 > transcript), the live coding round (Monaco + Judge0 sandbox), resume-driven
 > RAG personalization, and regional billing (Stripe globally + Razorpay in
 > India, monthly/annual) with plan entitlements — plus Sentry + Langfuse
-> observability, a scorer eval harness, CI, and a first UI/security polish pass
-> (widened dashboard, voice-room speaker orb, footer + legal pages, enforced
-> CSP) — are in place.
+> observability, a scorer eval harness, CI, and a full "Viva Glass" design
+> pass across the app (glass design system, animated landing hero, loading
+> skeletons, error/empty and not-found states, legal pages, location-based
+> pricing, enforced CSP) — are in place.
 
 ## Why this exists
 
