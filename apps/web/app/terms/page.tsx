@@ -75,8 +75,12 @@ export default function TermsPage() {
               Free and paid plans are described on our pricing page. Paid
               subscriptions renew until cancelled; you can cancel anytime and keep
               access through the end of the paid period. Fees are charged through
-              our payment processor. Except where required by law, payments are
-              non-refundable.
+              our payment processor. Refunds follow our{" "}
+              <Link className="text-teal hover:underline" href="/refunds">
+                Cancellation &amp; Refunds
+              </Link>{" "}
+              policy, including a 7-day money-back window on your first Pro
+              purchase.
             </p>
           </Section>
 

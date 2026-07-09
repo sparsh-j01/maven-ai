@@ -368,6 +368,16 @@ export default async function LandingPage() {
             />
           </div>
 
+          <p className="mt-5 flex flex-wrap items-center gap-x-2 text-sm text-muted">
+            <Check className="h-4 w-4 shrink-0 text-teal" aria-hidden />
+            <span className="font-medium text-fg">7-day money-back guarantee.</span>
+            Cancel anytime — see our{" "}
+            <Link href="/refunds" className="text-teal underline-offset-4 hover:underline">
+              Cancellation &amp; Refunds
+            </Link>{" "}
+            policy.
+          </p>
+
           <div className="mt-10">
             <PricingGlass
               tiers={PLANS.map((plan) => {
@@ -508,6 +518,7 @@ export default async function LandingPage() {
               links={[
                 { label: "Privacy Policy", href: "/privacy" },
                 { label: "Terms of Service", href: "/terms" },
+                { label: "Cancellation & Refunds", href: "/refunds" },
                 { label: "Delete Account", href: "/delete-account" },
               ]}
             />
