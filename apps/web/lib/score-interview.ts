@@ -139,6 +139,7 @@ async function writeReport(
     strengths: report.strengths,
     gaps: report.gaps,
     modelAnswers: report.modelAnswers,
+    studyPlan: report.studyPlan,
   });
   await db
     .update(interviews)

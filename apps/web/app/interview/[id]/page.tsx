@@ -14,6 +14,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CodePanel } from "@/components/code-panel";
 import { Button } from "@/components/ui/button";
+import { VoiceOrb } from "@/components/voice-orb";
 
 type ConnState =
   | "checking-mic"
@@ -154,7 +155,7 @@ export default function InterviewRoomPage() {
         <header className="flex items-center justify-between gap-4 border-b border-fg/10 px-6 py-4">
           <span className="flex min-w-0 items-center gap-2 font-display text-lg font-medium">
             <span className="h-2 w-2 shrink-0 rounded-full bg-teal" aria-hidden />
-            Maven
+            <span className="font-bold">Maven</span>
             {phase && started ? (
               <span className="ml-2 truncate rounded-full border border-fg/15 px-2.5 py-0.5 font-mono text-xs uppercase tracking-widest text-fg/60">
                 {phase.replace(/_/g, " ")}
@@ -326,25 +327,42 @@ function VoiceRoom({
 
   return (
     <div
-      className={`mx-auto flex w-full flex-1 flex-col items-center px-6 py-10 ${
+      className={`mx-auto flex w-full flex-1 flex-col items-center px-6 py-8 sm:py-12 ${
         compact ? "max-w-md" : "max-w-2xl"
       }`}
     >
-      <SpeakingBlob state={agentState} volume={agentVolume} compact={compact} />
-      <p className="mt-6 text-sm text-fg/70" aria-live="polite">
-        {status}
-      </p>
+      {/* The voice is the focal point — give it air above and below so the
+          card reads as a hierarchy, not four equal-weight bands. */}
+      <div className="flex shrink-0 flex-col items-center">
+        <SpeakingBlob
+          state={agentState}
+          volume={agentVolume}
+          compact={compact}
+        />
+        <p
+          key={status}
+          className="hero-fade mt-7 text-sm text-fg/55"
+          aria-live="polite"
+        >
+          {status}
+        </p>
+      </div>
 
       <ul
         ref={transcriptRef}
-        className="mt-8 flex w-full flex-1 flex-col gap-3 overflow-y-auto"
+        className={`flex w-full flex-1 flex-col gap-3 overflow-y-auto ${
+          compact ? "mt-8" : "mt-12"
+        }`}
       >
         {transcriptions.map((t, i) => {
           const mine =
             t.participantInfo?.identity === localParticipant.identity;
           const current = i === transcriptions.length - 1;
           return (
-            <li key={i} className={mine ? "text-right" : "text-left"}>
+            <li
+              key={i}
+              className={`hero-fade ${mine ? "text-right" : "text-left"}`}
+            >
               <span
                 className={`font-mono text-xs uppercase tracking-widest ${
                   mine ? "text-teal" : "text-fg/40"
@@ -405,47 +423,18 @@ function SpeakingBlob({
         : state === "thinking"
           ? "--amber"
           : "--muted";
-  // Only the interviewer's voice drives the swell; clamp so a loud spike can't
-  // blow out the layout.
+  // Only the interviewer's voice drives the swell + morph; clamp so a loud
+  // spike can't blow out the layout.
   const speaking = state === "speaking";
   const swell = speaking ? 1 + Math.min(Math.max(volume, 0), 1) * 0.3 : 1;
-  const size = compact ? 156 : 232;
 
   return (
-    <div
-      className="relative flex shrink-0 items-center justify-center"
-      style={{ width: size, height: size }}
-      aria-hidden
-    >
-      <div
-        className={`absolute inset-0 ${speaking ? "" : "blob-breathe"}`}
-        style={{
-          borderRadius: "46% 54% 51% 49% / 54% 47% 53% 46%",
-          background: `radial-gradient(circle at 50% 45%, rgb(var(${tone}) / 0.30), transparent 68%)`,
-          transform: `scale(${swell})`,
-          transition: "transform 90ms ease-out, background 300ms ease",
-        }}
-      />
-      <div
-        className="absolute"
-        style={{
-          inset: "16%",
-          borderRadius: "54% 46% 49% 51% / 47% 54% 46% 53%",
-          background: `radial-gradient(circle at 50% 42%, rgb(var(${tone}) / 0.55), rgb(var(${tone}) / 0.10) 72%)`,
-          transform: `scale(${speaking ? swell : 1})`,
-          transition: "transform 90ms ease-out, background 300ms ease",
-        }}
-      />
-      <div
-        className="relative rounded-full"
-        style={{
-          width: "30%",
-          height: "30%",
-          background: `rgb(var(${tone}) / 0.92)`,
-          boxShadow: `0 0 44px rgb(var(${tone}) / 0.45)`,
-        }}
-      />
-    </div>
+    <VoiceOrb
+      tone={tone}
+      active={speaking}
+      swell={swell}
+      size={compact ? 156 : 232}
+    />
   );
 }
 

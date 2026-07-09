@@ -5,6 +5,7 @@ import {
   getDb,
   interviews,
   interviewTurns,
+  users,
 } from "@maven-ai/db";
 import { RUBRIC_DIMENSIONS, type RubricScores } from "@maven-ai/shared";
 import { and, asc, eq } from "drizzle-orm";
@@ -16,6 +17,7 @@ import { RetryScoring, ScoreKicker } from "@/components/score-kicker";
 import { TopBar } from "@/components/top-bar";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { UpgradeButton } from "@/components/upgrade-button";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +33,16 @@ const fmtTime = (ms: number) => {
 
 const scoreColor = (n: number) =>
   n >= 70 ? "text-teal" : n >= 40 ? "text-amber" : "text-danger";
+
+// The readiness verdict shown alongside the 0–100 score.
+const readinessBand = (n: number) =>
+  n >= 80
+    ? "Interview-ready"
+    : n >= 65
+      ? "Nearly there"
+      : n >= 45
+        ? "Getting there"
+        : "Needs work";
 
 export default async function ReportPage({
   params,
@@ -61,6 +73,13 @@ export default async function ReportPage({
     .from(feedbackReports)
     .where(eq(feedbackReports.interviewId, id))
     .limit(1);
+
+  // Pro gates the AI-coach study plan (same model as model answers).
+  const [u] = await db
+    .select({ plan: users.plan })
+    .from(users)
+    .where(eq(users.id, userId));
+  const isPro = u?.plan === "pro";
 
   const turns = await db
     .select({
@@ -108,12 +127,22 @@ export default async function ReportPage({
   return (
     <Shell role={iv.role} sub={subtitle(iv)}>
       {ready && overall != null ? (
-        <Card className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-8">
+        <Card className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-8">
           <div className="shrink-0">
-            <span className={`font-mono text-5xl font-semibold ${scoreColor(overall)}`}>
-              {Math.round(overall)}
-            </span>
-            <span className="font-mono text-fg/40">/100</span>
+            <p className="font-mono text-[11px] uppercase tracking-widest text-fg/50">
+              Interview readiness
+            </p>
+            <div className="mt-1 flex items-baseline gap-1">
+              <span
+                className={`font-mono text-5xl font-semibold ${scoreColor(overall)}`}
+              >
+                {Math.round(overall)}
+              </span>
+              <span className="font-mono text-fg/40">/100</span>
+            </div>
+            <p className={`mt-1 text-sm font-medium ${scoreColor(overall)}`}>
+              {readinessBand(overall)}
+            </p>
           </div>
           <p className="font-serif text-lg leading-relaxed text-fg/80">
             {report.summary}
@@ -166,6 +195,59 @@ export default async function ReportPage({
               </p>
             </Card>
           ))}
+        </section>
+      ) : null}
+
+      {ready && report.studyPlan?.length ? (
+        <section className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <h2 className="font-display font-medium text-2xl tracking-tight">
+              Your AI coach
+            </h2>
+            <span className="rounded-full bg-accent/12 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-accent">
+              Pro
+            </span>
+          </div>
+          {isPro ? (
+            <div className="flex flex-col gap-3">
+              {report.studyPlan.map((s, i) => (
+                <Card key={i} className="flex gap-4">
+                  <span className="shrink-0 font-mono text-sm text-accent">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <div>
+                    <h3 className="font-medium text-fg">{s.focus}</h3>
+                    <p className="mt-1 text-sm text-fg/60">{s.why}</p>
+                    <ul className="mt-3 flex flex-col gap-2">
+                      {s.actions.map((a, j) => (
+                        <li key={j} className="flex gap-2 text-sm text-fg/80">
+                          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+                          {a}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <Card className="flex flex-col items-start gap-4">
+              <ul className="flex select-none flex-col gap-1.5 blur-[3px]" aria-hidden>
+                {report.studyPlan.map((s, i) => (
+                  <li key={i} className="text-sm text-fg/80">
+                    {String(i + 1).padStart(2, "0")} · {s.focus}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-sm text-fg/70">
+                Your AI coach turned this interview into a{" "}
+                {report.studyPlan.length}-part study plan — the exact topics and
+                drills to close your gaps before the real thing. Unlock it with
+                Pro.
+              </p>
+              <UpgradeButton />
+            </Card>
+          )}
         </section>
       ) : null}
 

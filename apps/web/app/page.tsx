@@ -45,7 +45,7 @@ const PLANS = [
       "Résumé, JD & company tailoring",
       "Adaptive voice interviewer",
       "Live coding round",
-      "Rubric-scored report",
+      "Rubric report + readiness score",
     ],
   },
   {
@@ -57,6 +57,7 @@ const PLANS = [
     inherits: "Free",
     features: [
       "Unlimited interviews — no monthly cap",
+      "AI coach: a personalized study plan",
       "Model answers for every weak spot",
       "Full transcript & report history",
     ],
@@ -77,11 +78,10 @@ const PLANS = [
 ] as const;
 
 const HERO_FEATURES = [
-  "Adaptive follow-ups",
-  "Live coding",
-  "System design",
-  "Rubric scoring",
-  "Replayable transcript",
+  { title: "Adaptive follow-ups", blurb: "Digs deeper based on your answer" },
+  { title: "Live coding", blurb: "Solve real problems while you talk" },
+  { title: "System design", blurb: "Whiteboard architecture out loud" },
+  { title: "Readiness score", blurb: "A 0–100 read on how ready you are" },
 ] as const;
 
 const FAQS = [
@@ -129,14 +129,16 @@ const FAQS = [
 
 const cta = buttonVariants({ variant: "accent", size: "lg" });
 const navCta = buttonVariants({ variant: "accent", size: "sm" });
+// Nav links rest at 60% of the foreground and brighten to full on hover —
+// same colour, not a hue shift, which is what reads as premium.
 const navLink =
-  "rounded text-sm text-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+  "rounded text-sm text-fg/60 transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 const navCenterLink =
-  "rounded-full px-3.5 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-fg/5 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+  "rounded-full px-3.5 py-1.5 text-sm font-medium text-fg/60 transition-colors hover:bg-fg/5 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
 function Wordmark() {
   return (
-    <span className="flex items-center gap-2 font-display text-xl font-medium">
+    <span className="flex items-center gap-2 font-display text-xl font-bold">
       <span className="h-2 w-2 rounded-full bg-teal" aria-hidden />
       Maven
     </span>
@@ -232,7 +234,7 @@ export default async function LandingPage() {
           </nav>
         </header>
 
-        <section className="grid items-center gap-14 pt-8 lg:grid-cols-[1.05fr_1fr] lg:pt-12">
+        <section className="grid items-center gap-14 pt-8 lg:grid-cols-[1.05fr_1fr] lg:items-start lg:pt-12">
           <div>
             <p className="font-mono text-xs uppercase tracking-widest text-muted">
               Real-time voice mock interviews
@@ -243,8 +245,8 @@ export default async function LandingPage() {
             </h1>
             <p className="mt-6 max-w-lg text-lg leading-relaxed text-fg/70">
               An AI interviewer that digs into your reasoning instead of reading
-              from a script. Clean turns, adaptive follow-ups, a live coding
-              round, and a report that scores how you think — ten minutes in.
+              from a script — then scores how you think in a report you can
+              replay.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-6">
               <SignedOut>
@@ -264,11 +266,35 @@ export default async function LandingPage() {
                 See how it works
               </a>
             </div>
-            <ul className="mt-10 flex flex-wrap gap-x-5 gap-y-2.5 text-sm text-fg/75">
-              {HERO_FEATURES.map((f) => (
-                <li key={f} className="flex items-center gap-1.5">
-                  <Check className="h-4 w-4 shrink-0 text-teal" aria-hidden />
-                  {f}
+            {/* Credibility under the CTA — honest reassurance, no fabricated
+                stats or logos while the app isn't live yet. */}
+            <p className="mt-5 flex items-center gap-2 text-sm text-muted">
+              <span
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-teal"
+                aria-hidden
+              />
+              Built for FAANG &amp; MANGOS-style interviews
+            </p>
+            {/* Tiny glass cards, not a bullet list — each sells the benefit,
+                not just names the feature. */}
+            <ul className="mt-8 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {HERO_FEATURES.map((f, i) => (
+                <li
+                  key={f.title}
+                  className={`glass rounded-card px-3.5 py-2.5 ${
+                    i === HERO_FEATURES.length - 1 &&
+                    HERO_FEATURES.length % 2 === 1
+                      ? "sm:col-span-2"
+                      : ""
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Check className="h-3.5 w-3.5 shrink-0 text-teal" aria-hidden />
+                    <span className="text-sm font-medium">{f.title}</span>
+                  </div>
+                  <p className="mt-0.5 pl-[22px] text-xs leading-snug text-muted">
+                    {f.blurb}
+                  </p>
                 </li>
               ))}
             </ul>
@@ -425,7 +451,7 @@ export default async function LandingPage() {
             />
           </div>
           <div className="mt-12 flex flex-wrap items-center justify-between gap-3 border-t border-fg/10 py-6 font-mono text-[11px] uppercase tracking-widest text-muted">
-            <span>© 2026 Maven AI · voice mock interviews</span>
+            <span>© 2026 Maven · voice mock interviews</span>
             <span>Your data stays yours · never sold</span>
           </div>
         </footer>

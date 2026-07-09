@@ -8,8 +8,8 @@ import type { ReactNode } from "react";
 // real legal entity + contact addresses — the emails below are placeholders.
 
 export const metadata: Metadata = {
-  title: "Privacy · Maven AI",
-  description: "How Maven AI collects, uses, and protects your data.",
+  title: "Privacy · Maven",
+  description: "How Maven collects, uses, and protects your data.",
 };
 
 const UPDATED = "July 2026";
@@ -38,7 +38,7 @@ export default function PrivacyPage() {
           Last updated {UPDATED}
         </p>
         <p className="mt-6 text-sm leading-relaxed text-fg/75">
-          Maven AI (&ldquo;Maven&rdquo;, &ldquo;we&rdquo;) provides voice mock
+          Maven (&ldquo;we&rdquo;) provides voice mock
           interviews. This policy explains what we collect, why, and the choices
           you have. We collect only what the product needs and never sell your
           data.

@@ -140,6 +140,7 @@ export const feedbackReports = pgTable("feedback_reports", {
   strengths: jsonb("strengths").$type<string[]>(),
   gaps: jsonb("gaps").$type<string[]>(),
   modelAnswers: jsonb("model_answers").$type<FeedbackReport["modelAnswers"]>(),
+  studyPlan: jsonb("study_plan").$type<FeedbackReport["studyPlan"]>(),
   createdAt: ts("created_at").defaultNow(),
 });
 

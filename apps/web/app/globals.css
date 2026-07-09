@@ -122,6 +122,35 @@ body {
   animation: blob-breathe 3.4s ease-in-out infinite;
 }
 
+/* Voice orb: waveform bars, and the organic shape-morph while a voice is
+   active. Two morph layers run at different speeds (b reversed) so they never
+   line up — the blob wanders instead of looping. */
+@keyframes blob-morph {
+  0%,
+  100% {
+    border-radius: 46% 54% 51% 49% / 54% 47% 53% 46%;
+  }
+  25% {
+    border-radius: 60% 40% 42% 58% / 48% 62% 38% 52%;
+  }
+  50% {
+    border-radius: 38% 62% 63% 37% / 60% 42% 58% 40%;
+  }
+  75% {
+    border-radius: 52% 48% 44% 56% / 40% 54% 46% 60%;
+  }
+}
+
+.orb-wave {
+  animation: hero-wave 900ms ease-in-out infinite;
+}
+.orb-morph-a {
+  animation: blob-morph 4.2s ease-in-out infinite;
+}
+.orb-morph-b {
+  animation: blob-morph 5.6s ease-in-out infinite reverse;
+}
+
 /* --- Landing hero mockup: reacting waveform, fading question, follow-up pop --- */
 @keyframes hero-wave {
   0%,
@@ -170,7 +199,10 @@ body {
   .animate-pulse {
     animation: none;
   }
-  .blob-breathe {
+  .blob-breathe,
+  .orb-wave,
+  .orb-morph-a,
+  .orb-morph-b {
     animation: none;
   }
   .hero-fade,

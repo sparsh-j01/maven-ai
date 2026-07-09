@@ -25,7 +25,15 @@ export const modelAnswer = z.object({
   whatGreatLooksLike: z.string(),
 });
 
-// The structured-output shape the scorer must produce.
+// One focus area of the Pro AI-coach study plan.
+export const studyPlanItem = z.object({
+  focus: z.string(),
+  why: z.string(),
+  actions: z.array(z.string()),
+});
+
+// The structured-output shape the scorer must produce. `studyPlan` is optional
+// so older stored reports (and eval fixtures) that predate it still parse.
 export const feedbackReport = z.object({
   overallScore: z.number().min(0).max(100),
   rubricScores,
@@ -33,5 +41,6 @@ export const feedbackReport = z.object({
   strengths: z.array(z.string()),
   gaps: z.array(z.string()),
   modelAnswers: z.array(modelAnswer),
+  studyPlan: z.array(studyPlanItem).optional(),
 });
 export type FeedbackReport = z.infer<typeof feedbackReport>;

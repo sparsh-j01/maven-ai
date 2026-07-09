@@ -1,9 +1,11 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { useRouter } from "next/navigation";
 
-// Segmented toggle that persists to a cookie the server reads, then reloads so
-// server-rendered prices update.
+// Segmented toggle that persists to a cookie the server reads, then refreshes
+// the server component in place so prices update without a full reload — a
+// reload would reset scroll and jump the page to the top.
 export function PrefToggle<T extends string>({
   cookie,
   current,
@@ -13,10 +15,11 @@ export function PrefToggle<T extends string>({
   current: T;
   options: { value: T; label: string; hint?: string; discount?: string }[];
 }) {
+  const router = useRouter();
   function pick(v: T) {
     if (v === current) return;
     document.cookie = `${cookie}=${v}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
-    window.location.reload();
+    router.refresh();
   }
   return (
     <div className="inline-flex rounded-full border border-fg/15 p-0.5 font-mono text-xs">

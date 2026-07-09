@@ -7,8 +7,8 @@ import type { ReactNode } from "react";
 // launch — the contact address below is a placeholder.
 
 export const metadata: Metadata = {
-  title: "Terms · Maven AI",
-  description: "The terms that govern your use of Maven AI.",
+  title: "Terms · Maven",
+  description: "The terms that govern your use of Maven.",
 };
 
 const UPDATED = "July 2026";
@@ -37,7 +37,7 @@ export default function TermsPage() {
           Last updated {UPDATED}
         </p>
         <p className="mt-6 text-sm leading-relaxed text-fg/75">
-          These terms govern your use of Maven AI. By creating an account or
+          These terms govern your use of Maven. By creating an account or
           using the service, you agree to them.
         </p>
 

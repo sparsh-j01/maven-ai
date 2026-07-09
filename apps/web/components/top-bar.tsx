@@ -7,7 +7,7 @@ export function TopBar({ right }: { right?: ReactNode }) {
     <header className="flex items-center justify-between border-b border-fg/10 py-5">
       <Link
         href="/dashboard"
-        className="flex items-center gap-2 font-display font-medium text-xl"
+        className="flex items-center gap-2 font-display font-bold text-xl"
       >
         <span className="h-2 w-2 rounded-full bg-teal" aria-hidden />
         Maven

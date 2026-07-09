@@ -80,6 +80,7 @@ Score each rubric dimension from 0 to 10 (${dims}) and an overall score from 0 t
 - strengths: concrete things the candidate did well, pointing at the moment.
 - gaps: the most important weaknesses, each phrased as an actionable next step.
 - modelAnswers: for the weakest one or two answers, the question asked and a short outline of what a strong answer would have covered.
+- studyPlan: a coach's plan to get this candidate interview-ready — 2 or 3 focus areas drawn from the gaps above. Each has focus (what to work on), why (one line tying it to their performance in this interview), and actions (2 to 4 concrete, specific things to practice or study — name real topics/patterns, not generic advice).
 
 Base every score and claim only on what the candidate actually said above.`;
 }
@@ -110,6 +111,18 @@ export const feedbackResponseSchema = {
         required: ["question", "whatGreatLooksLike"],
       },
     },
+    studyPlan: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          focus: { type: "string" },
+          why: { type: "string" },
+          actions: { type: "array", items: { type: "string" } },
+        },
+        required: ["focus", "why", "actions"],
+      },
+    },
   },
   required: [
     "overallScore",
@@ -118,5 +131,6 @@ export const feedbackResponseSchema = {
     "strengths",
     "gaps",
     "modelAnswers",
+    "studyPlan",
   ],
 } as const;

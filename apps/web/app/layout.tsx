@@ -16,7 +16,7 @@ const serif = Newsreader({
 });
 
 export const metadata: Metadata = {
-  title: "Maven AI · Voice mock interviews",
+  title: "Maven · Voice mock interviews",
   description:
     "Practice interviews with a real-time voice AI. Take clean turns, run a live coding round, and get a rubric-scored report.",
 };

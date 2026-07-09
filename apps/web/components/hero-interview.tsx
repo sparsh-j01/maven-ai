@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { VoiceOrb } from "@/components/voice-orb";
 
 type Phase = "ask" | "answer" | "score" | "adapt";
 
@@ -24,8 +25,6 @@ const PHASES: { phase: Phase; ms: number }[] = [
   { phase: "score", ms: 2800 },
   { phase: "adapt", ms: 3600 },
 ];
-
-const BARS = Array.from({ length: 18 }, (_, i) => (i * 63) % 540);
 
 const fmt = (s: number) =>
   `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -114,7 +113,6 @@ export function HeroInterview() {
         ? "--accent"
         : "--teal";
   const waveActive = asking || adapting || (answering && !reduced);
-  const waveTone = asking || adapting ? "text-accent" : "text-teal";
   const status = scoring
     ? "Scoring your answer…"
     : adapting
@@ -131,7 +129,7 @@ export function HeroInterview() {
       <div className="flex items-center justify-between gap-3 border-b border-fg/10 px-5 py-3">
         <span className="flex items-center gap-2 font-display text-sm font-medium">
           <span className="h-2 w-2 rounded-full bg-teal" aria-hidden />
-          Maven
+          <span className="font-bold">Maven</span>
           <span className="ml-1 rounded-full border border-fg/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-muted">
             Technical
           </span>
@@ -165,52 +163,7 @@ export function HeroInterview() {
       </div>
 
       <div className="flex flex-col items-center gap-3 px-6 pb-6 pt-7">
-        <div className="relative h-20 w-20" aria-hidden>
-          {/* ambient halo — breathing, tight falloff so it reads as light, not a smudge */}
-          <div
-            className="blob-breathe absolute inset-0 rounded-full transition-[background] duration-500"
-            style={{
-              background: `radial-gradient(circle at 50% 46%, rgb(var(${orbTone}) / 0.3), transparent 60%)`,
-            }}
-          />
-          {/* concentric aperture rings give the orb structure */}
-          <div
-            className="absolute inset-[18%] rounded-full border transition-colors duration-500"
-            style={{ borderColor: `rgb(var(${orbTone}) / 0.22)` }}
-          />
-          <div
-            className="absolute inset-[29%] rounded-full border transition-colors duration-500"
-            style={{ borderColor: `rgb(var(${orbTone}) / 0.4)` }}
-          />
-          {/* core sphere — top-left highlight + outer glow reads as a lit bead */}
-          <div
-            className="absolute inset-[38%] rounded-full transition-[background,box-shadow] duration-500"
-            style={{
-              background: `radial-gradient(circle at 35% 30%, rgb(255 255 255 / 0.85), rgb(var(${orbTone})) 60%)`,
-              boxShadow: `0 0 22px rgb(var(${orbTone}) / 0.5), inset 0 1px 2px rgb(255 255 255 / 0.45)`,
-            }}
-          />
-        </div>
-
-        <div
-          className={`flex h-7 items-center gap-[3px] ${waveTone}`}
-          aria-hidden
-        >
-          {BARS.map((d, idx) => (
-            <span
-              key={idx}
-              className="w-[3px] origin-center rounded-full bg-current transition-transform duration-300"
-              style={
-                waveActive
-                  ? {
-                      height: "100%",
-                      animation: `hero-wave 900ms ${d}ms ease-in-out infinite`,
-                    }
-                  : { height: "100%", transform: "scaleY(0.2)" }
-              }
-            />
-          ))}
-        </div>
+        <VoiceOrb tone={orbTone} active={waveActive} size={148} />
 
         <span
           className={`font-mono text-xs uppercase tracking-widest ${
