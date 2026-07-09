@@ -108,9 +108,13 @@ export default function PrivacyPage() {
               content, by emailing{" "}
               <a className="text-teal hover:underline" href="mailto:privacy@maven.ai">
                 privacy@maven.ai
-              </a>
-              . Deleting your account removes your interviews, transcripts, and
-              stored résumé files. Depending on where you live, you may have
+              </a>{" "}
+              or from the{" "}
+              <Link className="text-teal hover:underline" href="/delete-account">
+                Delete Account
+              </Link>{" "}
+              page. Deleting your account removes your interviews, transcripts,
+              and stored résumé files. Depending on where you live, you may have
               additional rights (access, correction, portability, objection).
             </p>
           </Section>
@@ -124,12 +128,42 @@ export default function PrivacyPage() {
             </p>
           </Section>
 
+          <Section title="Children">
+            <p>
+              Maven is not intended for children under 13, and we don&apos;t
+              knowingly collect their data. If you believe a child has given us
+              personal information, email us and we&apos;ll delete it.
+            </p>
+          </Section>
+
+          <Section title="International transfers">
+            <p>
+              We&apos;re made in India and serve candidates everywhere, and the
+              providers that run Maven may process data in other countries
+              (including the United States). Where that happens, we rely on those
+              providers&apos; standard safeguards for cross-border transfers.
+            </p>
+          </Section>
+
           <Section title="Security">
             <p>
               Data is encrypted in transit (HTTPS). Interview files live in
               private storage, reachable only through short-lived signed links.
               Access is scoped so you can only reach your own interviews. No
-              system is perfectly secure, but we work to protect your data.
+              system is perfectly secure, but we work to protect your data — see
+              our{" "}
+              <Link className="text-teal hover:underline" href="/security">
+                Security page
+              </Link>{" "}
+              for details.
+            </p>
+          </Section>
+
+          <Section title="Changes to this policy">
+            <p>
+              We may update this policy as the product evolves. Material changes
+              will be reflected by the &ldquo;last updated&rdquo; date above, and
+              continued use of Maven means you accept the current version.
             </p>
           </Section>
 

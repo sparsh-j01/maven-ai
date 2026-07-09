@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+const A = "text-teal hover:underline";
+
 // Security overview written to what the app actually runs on (Clerk auth,
 // Stripe/Razorpay billing, Vercel hosting, Neon Postgres, Cloudflare R2, the
 // LiveKit/Deepgram/Google voice stack). DEV NOTE: keep this honest as the stack
@@ -34,7 +36,12 @@ export default function SecurityPage() {
         <h1 className="mt-6 font-display font-medium text-4xl tracking-tight">Security</h1>
         <p className="mt-6 text-sm leading-relaxed text-fg/75">
           Maven is built to keep your account and your interviews private. Here
-          is how we protect your data and who we rely on to do it.
+          is how we protect your data and who we rely on to do it. For what we
+          collect and why, see our{" "}
+          <Link className={A} href="/privacy">
+            Privacy Policy
+          </Link>
+          .
         </p>
 
         <div className="mt-12 space-y-10">
@@ -76,10 +83,36 @@ export default function SecurityPage() {
             </p>
           </Section>
 
+          <Section title="Backups & recovery">
+            <p>
+              Databases and file storage are backed up by our providers with
+              encryption, so we can recover from failures. When you delete your
+              account, your interviews, transcripts, and recordings are removed
+              and purged from backups within 30 days.
+            </p>
+          </Section>
+
+          <Section title="Monitoring & abuse prevention">
+            <p>
+              We log errors (Sentry) so we can catch and fix problems quickly,
+              and we rate-limit requests to protect the service from abuse. None
+              of this is used to advertise to you or sold to anyone.
+            </p>
+          </Section>
+
+          <Section title="What you can do">
+            <p>
+              Security is shared. Use a strong, unique password, turn on
+              multi-factor authentication in your account settings, and sign out
+              on shared devices. Never share your login, and let us know right
+              away if you notice anything unusual.
+            </p>
+          </Section>
+
           <Section title="Reporting a vulnerability">
             <p>
               Found a security issue? Please email{" "}
-              <a className="text-teal hover:underline" href="mailto:security@maven.ai">
+              <a className={A} href="mailto:security@maven.ai">
                 security@maven.ai
               </a>{" "}
               with the details and steps to reproduce. We&apos;ll acknowledge

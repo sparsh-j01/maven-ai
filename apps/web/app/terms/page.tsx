@@ -110,9 +110,19 @@ export default function TermsPage() {
           <Section title="Termination & changes">
             <p>
               You can stop using Maven anytime. We may suspend accounts that
-              violate these terms. We may update these terms; material changes
-              will be reflected by the &ldquo;last updated&rdquo; date, and
-              continued use means you accept them.
+              violate these terms, and we may add, change, or discontinue
+              features of the service. We may also update these terms; material
+              changes will be reflected by the &ldquo;last updated&rdquo; date,
+              and continued use means you accept them.
+            </p>
+          </Section>
+
+          <Section title="Governing law">
+            <p>
+              These terms are governed by the laws of India, and any dispute will
+              be handled by the courts there — except where the mandatory
+              consumer law of your own country gives you rights that can&apos;t be
+              waived.
             </p>
           </Section>
 
