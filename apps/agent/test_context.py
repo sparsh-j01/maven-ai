@@ -1,4 +1,4 @@
-from prompt_context import context_block, truncate
+from prompt_context import context_block, keyterms, truncate
 
 
 def test_empty_when_no_context():
@@ -23,3 +23,25 @@ def test_truncate_caps_length():
     assert truncate("a" * 100, 10).startswith("a" * 10)
     assert "truncated" in truncate("a" * 100, 10)
     assert truncate("  hi  ", 100) == "hi"
+
+
+def test_keyterms_pulls_name_role_and_tech():
+    kt = keyterms(
+        {
+            "role": "Backend Engineer",
+            "company": "Acme",
+            "resumeText": "John Doe\nBuilt REST APIs on AWS with Kubernetes and PostgreSQL.",
+            "jdText": "Experience with gRPC and CI/CD.",
+        }
+    )
+    low = [k.lower() for k in kt]
+    assert "john doe" in low  # candidate name from the top line
+    assert "backend engineer" in low and "acme" in low
+    assert {"aws", "kubernetes", "postgresql", "grpc", "ci/cd"} <= set(low)
+    assert "built" not in low and "with" not in low  # common words filtered out
+
+
+def test_keyterms_empty_and_capped():
+    assert keyterms({}) == []
+    big = " ".join(f"Term{i}" for i in range(200))
+    assert len(keyterms({"resumeText": big}, limit=10)) == 10

@@ -39,7 +39,7 @@ from livekit.plugins import deepgram, google, silero
 
 from coding import LANGUAGE_IDS, TESTS, expected_for, grade, run_on_judge0
 from plan_walker import PlanWalker
-from prompt_context import context_block
+from prompt_context import context_block, keyterms
 from telemetry import setup_langfuse
 
 # Coding-round guards (F1/F3, §8.1): cap submission size and the number of runs
@@ -76,16 +76,32 @@ honestly: if it is wrong or vague, ask one pointed follow-up rather than \
 accepting it; never read scores out loud and never give away the answer."""
 
 
-def _make_session() -> AgentSession:
+def _make_session(keyterms: Optional[list[str]] = None) -> AgentSession:
     # allow_interruptions=False = no barge-in (§2.2): the candidate cannot cut off
-    # the interviewer mid-question. End of the candidate's turn is Silero VAD
-    # endpointing plus client-side push-to-talk releasing the mic.
+    # the interviewer mid-question. turn_detection="manual" hands turn-taking to
+    # the push-to-talk button: the candidate's turn ends only when they RELEASE
+    # (the browser mutes the mic and we commit_user_turn), never on a VAD silence
+    # timer — so pausing mid-answer to think no longer skips to the next question.
+    stt_kwargs = {
+        # en-IN, not the plugin's en-US default: nova-3's accent-tuned Indian
+        # English locale. India-first product (§billing), and en-US mangles
+        # Indian-accented names and technical terms. Swap to "multi" if you need
+        # US/UK accents equally well, or make it per-interview.
+        "model": "nova-3",
+        "language": "en-IN",
+    }
+    # Keyterm prompting: boost the candidate's name + the tools on their resume so
+    # the STT stops mangling them (prompt_context.keyterms). Only when we have a
+    # resume/JD to mine — an empty list is a no-op we skip.
+    if keyterms:
+        stt_kwargs["keyterms"] = keyterms
     return AgentSession(
         vad=silero.VAD.load(),
-        stt=deepgram.STT(model="nova-3"),
+        stt=deepgram.STT(**stt_kwargs),
         llm=google.LLM(model="gemini-2.5-flash"),
         tts=deepgram.TTS(model="aura-asteria-en"),
         allow_interruptions=False,
+        turn_detection="manual",
     )
 
 
@@ -523,7 +539,7 @@ async def entrypoint(ctx: JobContext) -> None:
         interview_id=interview_id,
         room=ctx.room,
     )
-    session = _make_session()
+    session = _make_session(keyterms=keyterms(meta))
 
     # Coding round: the browser broadcasts the editor buffer and Run requests over
     # the data channel (§4.2). The buffer is display/control data, never trusted as
@@ -543,6 +559,37 @@ async def entrypoint(ctx: JobContext) -> None:
             }
         elif msg.get("type") == "run":
             asyncio.create_task(agent.handle_run())
+
+    # Push-to-talk turn control (§2.2): with turn_detection="manual" the session
+    # waits for us to commit — so we drive it off the mic mute state the browser
+    # already broadcasts. The candidate holds the talk button (mic unmuted) for
+    # their whole answer, pauses included, and releases to send (mic muted). Mute
+    # = end of turn; the dedupe flag stops a stray double-mute committing twice,
+    # and starts False so the very first release (a fresh publish never fires
+    # "unmuted") still commits.
+    committed = {"v": False}
+
+    @ctx.room.on("track_unmuted")
+    def _on_unmuted(_p: rtc.RemoteParticipant, pub: rtc.RemoteTrackPublication) -> None:
+        if pub.source != rtc.TrackSource.SOURCE_MICROPHONE:
+            return
+        committed["v"] = False
+        try:
+            session.clear_user_turn()  # begin this turn from a clean buffer
+        except Exception:
+            logger.exception("clear_user_turn failed")
+
+    @ctx.room.on("track_muted")
+    def _on_muted(_p: rtc.RemoteParticipant, pub: rtc.RemoteTrackPublication) -> None:
+        if pub.source != rtc.TrackSource.SOURCE_MICROPHONE or committed["v"]:
+            return
+        committed["v"] = True
+        try:
+            session.commit_user_turn()  # button released -> end the turn now
+        except Exception:
+            logger.exception("commit_user_turn failed")
+        # ponytail: an accidental tap with no speech commits an empty turn; the
+        # LLM just re-prompts. Add a "had speech this turn" gate if it annoys.
 
     # Persist every completed turn (both speakers) as it lands (§2.2). The handler
     # is sync; hand the DB write to the loop so it never blocks the voice pipeline.
