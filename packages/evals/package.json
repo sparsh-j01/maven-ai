@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "eval": "tsx src/run.ts",
+    "eval:sanity": "tsx src/sanity.ts",
+    "eval:live": "tsx --env-file=../../.env src/live.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

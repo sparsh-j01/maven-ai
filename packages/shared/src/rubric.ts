@@ -32,8 +32,6 @@ export const studyPlanItem = z.object({
   actions: z.array(z.string()),
 });
 
-// The structured-output shape the scorer must produce. `studyPlan` is optional
-// so older stored reports (and eval fixtures) that predate it still parse.
 export const feedbackReport = z.object({
   overallScore: z.number().min(0).max(100),
   rubricScores,
@@ -42,5 +40,18 @@ export const feedbackReport = z.object({
   gaps: z.array(z.string()),
   modelAnswers: z.array(modelAnswer),
   studyPlan: z.array(studyPlanItem).optional(),
+  claimAudit: z
+  .array(
+    z.object({
+      claim: z.string(),
+      verdict: z.enum(["true", "false"]),
+      why: z.string(),
+    }),
+  )
+  .optional(),
+correctness: z.number().min(0).max(100).optional(),
+completeness: z.number().min(0).max(100).optional(),
+  deliveryScore: z.number().min(0).max(100).optional(),
+  evidence: z.string().min(1).optional(),
 });
 export type FeedbackReport = z.infer<typeof feedbackReport>;

@@ -10,6 +10,9 @@ import {
 // Same structured-output grading call the async scorer runs in apps/web, minus
 // the DB/Inngest plumbing — so the eval exercises the real prompt + schema, not
 // a mock. Kept tiny on purpose; the interesting logic lives in shared.
+// Must match the production scorer (apps/web/lib/score-interview.ts) or the eval
+// grades a model you don't ship. ponytail: this id now lives in two files — hoist
+// it to @maven-ai/shared if it drifts again.
 const MODEL = "gemini-2.5-flash";
 const TIMEOUT_MS = 30_000;
 
@@ -21,7 +24,9 @@ export async function grade(input: ScorerInput): Promise<FeedbackReport> {
     systemInstruction: { parts: [{ text: SCORER_SYSTEM }] },
     contents: [{ parts: [{ text: buildScorerPrompt(input) }] }],
     generationConfig: {
-      temperature: 0.2,
+      // 0 for evals: a measurement, not a product. Production may keep 0.2
+      // for varied summary prose — but the eval needs a fixed number.
+      temperature: 0,
       responseMimeType: "application/json",
       responseSchema: feedbackResponseSchema,
     },

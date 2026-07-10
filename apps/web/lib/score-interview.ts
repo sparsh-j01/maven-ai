@@ -19,6 +19,9 @@ import {
 import { asc, eq } from "drizzle-orm";
 import { inngest } from "./inngest";
 
+// Flash, not Pro: gemini-2.5-pro is paid-tier only (free tier = 0 quota) and
+// would 429 every report. Flip to gemini-2.5-pro once Google billing is enabled —
+// run `pnpm eval` first to confirm it grades before you ship that change.
 const MODEL = "gemini-2.5-flash";
 const TIMEOUT_MS = 30_000;
 
