@@ -277,8 +277,12 @@ export default function NewInterviewPage() {
 
           <div className="flex flex-col gap-2.5">
             <label htmlFor="resume-text" className="text-sm font-medium">
-              Resume <span className="text-fg/40">(optional)</span>
+              Resume <span className="text-fg/40">(optional, recommended)</span>
             </label>
+            <p className="-mt-1 text-xs text-fg/50">
+              Tailors the questions to your background — and helps the interviewer
+              hear your name and the tools you mention.
+            </p>
 
             {/* The label wraps only the file input, so the textarea below stays independently focusable. */}
             <label

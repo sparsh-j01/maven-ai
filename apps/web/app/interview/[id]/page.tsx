@@ -60,6 +60,9 @@ export default function InterviewRoomPage() {
     : null;
   const [seconds, setSeconds] = useState(0);
   const [confirmLeave, setConfirmLeave] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  // Browsers block autoplay of the interviewer's voice until the user gestures.
+  const [audioBlocked, setAudioBlocked] = useState(false);
 
   const started = state === "live" || state === "reconnecting";
   useEffect(() => {
@@ -81,6 +84,8 @@ export default function InterviewRoomPage() {
     const onReconnecting = () => setState("reconnecting");
     const onReconnected = () => setState("live");
     const onDisconnected = () => setState("disconnected");
+    // Autoplay gate: keep the "enable sound" button in sync with playback state.
+    const onAudioStatus = () => setAudioBlocked(!room.canPlaybackAudio);
     // The agent signals over the data channel: {type:"ended"} when it ends the
     // interview, {type:"phase"} to announce the phase and active coding problem.
     const onData = (payload: Uint8Array) => {
@@ -100,7 +105,8 @@ export default function InterviewRoomPage() {
       .on(RoomEvent.Reconnecting, onReconnecting)
       .on(RoomEvent.Reconnected, onReconnected)
       .on(RoomEvent.Disconnected, onDisconnected)
-      .on(RoomEvent.DataReceived, onData);
+      .on(RoomEvent.DataReceived, onData)
+      .on(RoomEvent.AudioPlaybackStatusChanged, onAudioStatus);
 
     (async () => {
       // Confirm mic permission before joining so the candidate never lands in a
@@ -131,6 +137,15 @@ export default function InterviewRoomPage() {
         if (cancelled) return;
         await room.localParticipant.setMicrophoneEnabled(false);
         setState("live");
+        // Try to unblock the interviewer's voice now; if the browser refuses
+        // (no fresh user gesture survived the navigation), the enable-sound
+        // button surfaces so the candidate can start it with a tap.
+        try {
+          await room.startAudio();
+        } catch {
+          /* blocked — button will prompt */
+        }
+        setAudioBlocked(!room.canPlaybackAudio);
       } catch (e) {
         if (cancelled) return;
         setDetail(e instanceof Error ? e.message : "connection failed");
@@ -144,10 +159,36 @@ export default function InterviewRoomPage() {
         .off(RoomEvent.Reconnecting, onReconnecting)
         .off(RoomEvent.Reconnected, onReconnected)
         .off(RoomEvent.Disconnected, onDisconnected)
-        .off(RoomEvent.DataReceived, onData);
+        .off(RoomEvent.DataReceived, onData)
+        .off(RoomEvent.AudioPlaybackStatusChanged, onAudioStatus);
       void room.disconnect();
     };
   }, [id, room, attempt]);
+
+  // Leaving = ending the interview, not just navigating away: finalize it so the
+  // scorer runs on the transcript so far and a report gets generated. Land on the
+  // report if there's something to score, otherwise the dashboard.
+  async function endInterview() {
+    setLeaving(true);
+    try {
+      const res = await fetch(`/api/interviews/${id}/end`, { method: "POST" });
+      const { scored } = (await res.json()) as { scored?: boolean };
+      window.location.href = scored ? `/interview/${id}/report` : "/dashboard";
+    } catch {
+      window.location.href = "/dashboard";
+    }
+  }
+
+  // Must run from a user gesture (the button click) — Safari won't start remote
+  // audio otherwise.
+  async function enableAudio() {
+    try {
+      await room.startAudio();
+      setAudioBlocked(false);
+    } catch {
+      /* still blocked */
+    }
+  }
 
   return (
     <RoomContext.Provider value={room}>
@@ -191,19 +232,21 @@ export default function InterviewRoomPage() {
             {started &&
               (confirmLeave ? (
                 <span className="flex items-center gap-3 text-sm">
-                  <span className="text-fg/60">Leave the interview?</span>
+                  <span className="text-fg/60">
+                    End the interview? We&apos;ll score what you&apos;ve done.
+                  </span>
                   <button
                     type="button"
-                    className="font-medium text-danger transition-colors hover:text-danger/80"
-                    onClick={() => {
-                      window.location.href = "/dashboard";
-                    }}
+                    disabled={leaving}
+                    className="font-medium text-danger transition-colors hover:text-danger/80 disabled:opacity-60"
+                    onClick={endInterview}
                   >
-                    Leave
+                    {leaving ? "Ending…" : "End & score"}
                   </button>
                   <button
                     type="button"
-                    className="text-fg/60 transition-colors hover:text-fg"
+                    disabled={leaving}
+                    className="text-fg/60 transition-colors hover:text-fg disabled:opacity-60"
                     onClick={() => setConfirmLeave(false)}
                   >
                     Stay
@@ -220,6 +263,16 @@ export default function InterviewRoomPage() {
               ))}
           </span>
         </header>
+
+        {started && audioBlocked ? (
+          <button
+            type="button"
+            onClick={enableAudio}
+            className="mx-auto mt-3 flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-medium text-on-accent shadow-lg shadow-accent/30 transition-colors hover:bg-accent/90"
+          >
+            <span aria-hidden>🔊</span> Tap to enable the interviewer&apos;s voice
+          </button>
+        ) : null}
 
         {state === "ended" ? (
           <Ended id={id} />
