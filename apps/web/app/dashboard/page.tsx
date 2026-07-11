@@ -146,17 +146,28 @@ export default async function DashboardPage({
             Your interviews
           </h1>
         </div>
-        <Link
-          href="/interview/new"
-          className={buttonVariants({ variant: "accent" })}
-        >
-          Start new interview
-        </Link>
+        {/* At the free cap, the primary CTA goes straight to checkout
+            (Razorpay/Stripe) instead of a setup form the API would 402. */}
+        {atLimit && !isPro ? (
+          <UpgradeButton />
+        ) : (
+          <Link
+            href="/interview/new"
+            className={buttonVariants({ variant: "accent" })}
+          >
+            Start new interview
+          </Link>
+        )}
       </div>
 
       {rows.length === 0 ? (
         <Card className="mt-8 py-16 text-center">
-          <h2 className="font-display font-medium text-3xl tracking-tight">
+          <p className="font-mono text-xs uppercase tracking-widest text-fg/50">
+            {unlimited
+              ? "Unlimited interviews on Pro"
+              : `${limit - usedThisMonth} of ${limit} free interviews left this month`}
+          </p>
+          <h2 className="mt-3 font-display font-medium text-3xl tracking-tight">
             Run your first interview
           </h2>
           <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-fg/70">
