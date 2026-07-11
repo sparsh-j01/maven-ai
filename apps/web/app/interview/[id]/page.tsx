@@ -83,7 +83,10 @@ export default function InterviewRoomPage() {
     let cancelled = false;
     const onReconnecting = () => setState("reconnecting");
     const onReconnected = () => setState("live");
-    const onDisconnected = () => setState("disconnected");
+    // A normal end tears the room down ~0.5s after the "ended" frame arrives;
+    // that teardown must not clobber the "ended" screen (and its report link).
+    const onDisconnected = () =>
+      setState((s) => (s === "ended" ? s : "disconnected"));
     // Autoplay gate: keep the "enable sound" button in sync with playback state.
     const onAudioStatus = () => setAudioBlocked(!room.canPlaybackAudio);
     // The agent signals over the data channel: {type:"ended"} when it ends the
@@ -192,7 +195,7 @@ export default function InterviewRoomPage() {
 
   return (
     <RoomContext.Provider value={room}>
-      <main className="flex min-h-screen flex-col text-fg">
+      <main className="flex h-dvh flex-col text-fg">
         <header className="flex items-center justify-between gap-4 border-b border-fg/10 px-6 py-4">
           <span className="flex min-w-0 items-center gap-2 font-display text-lg font-medium">
             <span className="h-2 w-2 shrink-0 rounded-full bg-teal" aria-hidden />
@@ -380,7 +383,7 @@ function VoiceRoom({
 
   return (
     <div
-      className={`mx-auto flex w-full flex-1 flex-col items-center px-6 py-8 sm:py-12 ${
+      className={`mx-auto flex w-full min-h-0 flex-1 flex-col items-center px-6 py-8 sm:py-12 ${
         compact ? "max-w-md" : "max-w-2xl"
       }`}
     >
