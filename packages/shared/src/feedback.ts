@@ -43,10 +43,19 @@ export function formatTranscript(turns: ScorerTurn[]): string {
 }
 
 // Transcript/resume/code go in fenced blocks; the instruction above marks them as data.
-export function buildScorerPrompt(input: ScorerInput): string {
+export function buildScorerPrompt(
+  input: ScorerInput,
+  opts: { includeStudyPlan?: boolean } = {},
+): string {
+  const { includeStudyPlan = true } = opts;
   const dims = RUBRIC_DIMENSIONS.join(", ");
   const resume = input.resumeText?.trim();
   const code = (input.code ?? []).filter((c) => c.code.trim());
+  // Free users don't get the study plan generated (it's Pro-gated and shown as a
+  // blurred decoy), so leave the bullet out — Gemini spends no tokens on it.
+  const studyPlanBullet = includeStudyPlan
+    ? "\n- studyPlan: a coach's plan to get this candidate interview-ready — 2 or 3 focus areas drawn from the gaps above. Each has focus (what to work on), why (one line tying it to their performance in this interview), and actions (2 to 4 concrete, specific things to practice or study — name real topics/patterns, not generic advice)."
+    : "";
 
   const blocks = [
     `<transcript>\n${formatTranscript(input.transcript)}\n</transcript>`,
@@ -81,8 +90,7 @@ Score each rubric dimension from 0 to 10 (${dims}) and an overall score from 0 t
 - summary: one or two sentences — the honest verdict.
 - strengths: concrete things the candidate did well, pointing at the moment.
 - gaps: the most important weaknesses, each phrased as an actionable next step.
-- modelAnswers: for the weakest one or two answers, the question asked and a short outline of what a strong answer would have covered.
-- studyPlan: a coach's plan to get this candidate interview-ready — 2 or 3 focus areas drawn from the gaps above. Each has focus (what to work on), why (one line tying it to their performance in this interview), and actions (2 to 4 concrete, specific things to practice or study — name real topics/patterns, not generic advice).
+- modelAnswers: for the weakest one or two answers, the question asked and a short outline of what a strong answer would have covered.${studyPlanBullet}
 - claimAudit: every falsifiable TECHNICAL proposition the candidate asserted, quoted VERBATIM, each with verdict "true" or "false" and a one-line reason. Statements about the candidate's own knowledge or process ("I don't remember", "I'd Google it", "I'd benchmark it") are NOT claims — omit them. Judge the PROPOSITION, not the vocabulary: a candidate who uses a real term correctly but asserts something false about it has made a FALSE claim. "Fail closed protects availability" is FALSE even though "fail closed" is a real concept. A claim that is partly true is false. For a behavioral interview there are usually no falsifiable technical claims — return an empty array.
 - correctness: 0 to 100. Compute this as 100 minus (20 × the number of claims you marked "false" in claimAudit). This measures ONLY whether what they said was true. Saying nothing scores 100 here. Ignore delivery. For a behavioral interview, return 100.
 - completeness: 0 to 100. The question has an ideal answer made of specific components. Identify the components, list which the candidate produced and which they missed, then score as (components produced ÷ total components) × 100. Judge only what they produced, not its truthfulness or delivery. Example — "find duplicates in an array" has four components: the brute-force approach (25), its O(n²) complexity (25), the optimal hash/set approach (25), its O(n) complexity (25). A candidate who gives brute force and its complexity but never reaches the set scores 50.
@@ -162,3 +170,19 @@ export const feedbackResponseSchema = {
     "evidence",
   ],
 } as const;
+
+// The same schema minus studyPlan, for free users. Structured output can't emit a
+// field that isn't in the schema, so the plan is never generated (no wasted tokens)
+// and never reaches the client. Pro passes true and gets the full schema back.
+export function feedbackSchemaFor(includeStudyPlan: boolean) {
+  const properties: Record<string, unknown> = {
+    ...feedbackResponseSchema.properties,
+  };
+  const required = [...feedbackResponseSchema.required] as string[];
+  if (!includeStudyPlan) {
+    delete properties.studyPlan;
+    const i = required.indexOf("studyPlan");
+    if (i >= 0) required.splice(i, 1);
+  }
+  return { ...feedbackResponseSchema, properties, required };
+}

@@ -4,11 +4,12 @@ import {
   getDb,
   interviews,
   interviewTurns,
+  users,
 } from "@maven-ai/db";
 import {
   buildScorerPrompt,
   feedbackReport,
-  feedbackResponseSchema,
+  feedbackSchemaFor,
   SCORER_SYSTEM,
   type FeedbackReport,
   type InterviewType,
@@ -25,7 +26,7 @@ import { inngest } from "./inngest";
 const MODEL = "gemini-2.5-flash";
 const TIMEOUT_MS = 30_000;
 
-type Loaded = { hasReport: boolean; input: ScorerInput };
+type Loaded = { hasReport: boolean; isPro: boolean; input: ScorerInput };
 
 async function loadInterview(interviewId: string): Promise<Loaded | null> {
   const db = getDb();
@@ -36,8 +37,10 @@ async function loadInterview(interviewId: string): Promise<Loaded | null> {
       seniority: interviews.seniority,
       type: interviews.type,
       resumeText: interviews.resumeText,
+      plan: users.plan,
     })
     .from(interviews)
+    .leftJoin(users, eq(users.id, interviews.userId))
     .where(eq(interviews.id, interviewId));
   if (!iv) return null;
 
@@ -65,6 +68,7 @@ async function loadInterview(interviewId: string): Promise<Loaded | null> {
 
   return {
     hasReport: existing.length > 0,
+    isPro: iv.plan === "pro",
     input: {
       role: iv.role,
       company: iv.company,
@@ -84,17 +88,22 @@ async function loadInterview(interviewId: string): Promise<Loaded | null> {
   };
 }
 
-async function gradeWithGemini(input: ScorerInput): Promise<FeedbackReport> {
+async function gradeWithGemini(
+  input: ScorerInput,
+  includeStudyPlan: boolean,
+): Promise<FeedbackReport> {
   const key = process.env.GOOGLE_API_KEY;
   if (!key) throw new Error("GOOGLE_API_KEY is not set — cannot score");
 
   const body = {
     systemInstruction: { parts: [{ text: SCORER_SYSTEM }] },
-    contents: [{ parts: [{ text: buildScorerPrompt(input) }] }],
+    contents: [
+      { parts: [{ text: buildScorerPrompt(input, { includeStudyPlan }) }] },
+    ],
     generationConfig: {
       temperature: 0.2,
       responseMimeType: "application/json",
-      responseSchema: feedbackResponseSchema,
+      responseSchema: feedbackSchemaFor(includeStudyPlan),
     },
   };
 
@@ -142,7 +151,7 @@ async function writeReport(
     strengths: report.strengths,
     gaps: report.gaps,
     modelAnswers: report.modelAnswers,
-    studyPlan: report.studyPlan,
+    studyPlan: report.studyPlan ?? null,
   });
   await db
     .update(interviews)
@@ -183,7 +192,9 @@ export const scoreInterview = inngest.createFunction(
       return { skipped: "empty transcript" };
     }
 
-    const report = await step.run("grade", () => gradeWithGemini(loaded.input));
+    const report = await step.run("grade", () =>
+      gradeWithGemini(loaded.input, loaded.isPro),
+    );
     await step.run("persist", () => writeReport(interviewId, report));
     return { ok: true, overallScore: report.overallScore };
   },

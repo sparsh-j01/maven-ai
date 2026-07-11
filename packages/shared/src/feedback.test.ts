@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildScorerPrompt,
+  feedbackSchemaFor,
   formatTranscript,
   type ScorerInput,
 } from "./feedback";
@@ -48,5 +49,24 @@ describe("buildScorerPrompt", () => {
     });
     expect(withCode).toContain("<code_submissions>");
     expect(withCode).toContain("passed");
+  });
+
+  it("drops studyPlan for free users so Gemini never generates it", () => {
+    expect(buildScorerPrompt(base)).toContain("studyPlan"); // Pro default
+    expect(buildScorerPrompt(base, { includeStudyPlan: false })).not.toContain(
+      "studyPlan",
+    );
+  });
+});
+
+describe("feedbackSchemaFor", () => {
+  it("excludes studyPlan from the free schema (property + required)", () => {
+    const free = feedbackSchemaFor(false);
+    expect(free.properties).not.toHaveProperty("studyPlan");
+    expect(free.required).not.toContain("studyPlan");
+
+    const pro = feedbackSchemaFor(true);
+    expect(pro.properties).toHaveProperty("studyPlan");
+    expect(pro.required).toContain("studyPlan");
   });
 });

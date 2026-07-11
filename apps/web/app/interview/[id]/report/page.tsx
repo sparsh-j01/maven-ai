@@ -44,6 +44,15 @@ const readinessBand = (n: number) =>
         ? "Getting there"
         : "Needs work";
 
+// Shown blurred to free users in place of the real, Pro-only study plan. It's a
+// static decoy: the real plan is never generated or sent to a free client, so
+// stripping the CSS blur reveals only this placeholder — nothing real leaks.
+const DECOY_PLAN = [
+  "Data structures & algorithmic complexity",
+  "System design fundamentals",
+  "Communicating trade-offs under pressure",
+] as const;
+
 export default async function ReportPage({
   params,
 }: {
@@ -123,6 +132,8 @@ export default async function ReportPage({
 
   const ready = iv.status === "ready" && report;
   const overall = report?.overallScore != null ? Number(report.overallScore) : null;
+  // Pro sees the real generated plan; free always sees the blurred decoy teaser.
+  const showCoach = ready && (isPro ? !!report?.studyPlan?.length : true);
 
   return (
     <Shell role={iv.role} sub={subtitle(iv)}>
@@ -198,7 +209,7 @@ export default async function ReportPage({
         </section>
       ) : null}
 
-      {ready && report.studyPlan?.length ? (
+      {showCoach ? (
         <section className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <h2 className="font-display font-medium text-2xl tracking-tight">
@@ -210,7 +221,7 @@ export default async function ReportPage({
           </div>
           {isPro ? (
             <div className="flex flex-col gap-3">
-              {report.studyPlan.map((s, i) => (
+              {report.studyPlan?.map((s, i) => (
                 <Card key={i} className="flex gap-4">
                   <span className="shrink-0 font-mono text-sm text-accent">
                     {String(i + 1).padStart(2, "0")}
@@ -231,19 +242,20 @@ export default async function ReportPage({
               ))}
             </div>
           ) : (
+            // Free: a static blurred decoy. The real plan isn't generated for
+            // free users, so there's nothing real in the payload to un-blur.
             <Card className="flex flex-col items-start gap-4">
               <ul className="flex select-none flex-col gap-1.5 blur-[3px]" aria-hidden>
-                {report.studyPlan.map((s, i) => (
+                {DECOY_PLAN.map((focus, i) => (
                   <li key={i} className="text-sm text-fg/80">
-                    {String(i + 1).padStart(2, "0")} · {s.focus}
+                    {String(i + 1).padStart(2, "0")} · {focus}
                   </li>
                 ))}
               </ul>
               <p className="text-sm text-fg/70">
-                Your AI coach turned this interview into a{" "}
-                {report.studyPlan.length}-part study plan — the exact topics and
-                drills to close your gaps before the real thing. Unlock it with
-                Pro.
+                Your AI coach turns this interview into a personalized study plan
+                — the exact topics and drills to close your gaps before the real
+                thing. Unlock it with Pro.
               </p>
               <UpgradeButton />
             </Card>
