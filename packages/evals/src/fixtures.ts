@@ -119,6 +119,26 @@ export const CASES = [
   },
 ] satisfies EvalCase[];
 
+// A4: a real garbled transcript from a live interview. STT mangled coherent
+// answers into fragments ("sweep"->"sweet", "eval suite"->"eval suit").
+// Production scored this 15/100 — punishing the candidate for a transcription
+// failure, not a bad answer. Kept here (NOT in CASES) until the grader gets a
+// `gradeable` flag; that ships with the STT work, and this becomes a real test.
+export const GARBLED_STT_CASE = {
+  name: "garbled-stt-transcript",
+  input: {
+    role: "Backend Engineer",
+    seniority: "mid",
+    type: "behavioral",
+    transcript: [
+      { speaker: "interviewer", text: "Tell me about a time you disagreed with a teammate." },
+      { speaker: "candidate", text: "Let me tell about the first one. Actually, what happened was facing a tough time in evaluating the sweet part. The eval suit is really difficult and tough to handle." },
+      { speaker: "interviewer", text: "Can you give me a specific example and the steps you took?" },
+      { speaker: "candidate", text: "Okay. So the steps I took was first, we listed down the pros and cons of both the sides. And then decided which will be better for our team." },
+    ],
+  },
+} satisfies EvalCase;
+
 // Only what the candidate actually said — evidence must be attributable to them,
 // not to the interviewer's question.
 export function candidateText(input: ScorerInput): string {
