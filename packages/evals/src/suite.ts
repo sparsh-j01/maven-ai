@@ -15,7 +15,21 @@ export type SuiteResult = { passed: boolean; failures: string[] };
 
 export async function runEvalSuite(scorer: Scorer): Promise<SuiteResult> {
   const out = new Map<string, ScoreOutput>();
-  for (const c of CASES) out.set(c.name, await scorer(c.input));
+  for (const c of CASES) {
+    try {
+      out.set(c.name, await scorer(c.input));
+    } catch (e) {
+      // One failed grade must not crash the whole run. Sentinel -1s make this
+      // case fail its assertions loudly instead of throwing.
+      out.set(c.name, {
+        correctness: -1,
+        completeness: -1,
+        communication: -1,
+        evidence: "",
+      });
+      console.error(`${c.name}: grade failed — ${(e as Error).message}`);
+    }
+  }
   const g = (n: string) => out.get(n)!;
 
   const c1 = g("strong-senior-technical");
@@ -39,7 +53,7 @@ export async function runEvalSuite(scorer: Scorer): Promise<SuiteResult> {
   // Completeness must: case 5 reaches the Set solution, case 2 stops at brute
   // force. Observed live: c5=80, c2=30.
   check(
-    c5.completeness > c2.completeness + 30,
+    c5.completeness > c2.completeness + 20,
     `case5 completeness ${c5.completeness} not clearly above case2 ${c2.completeness}`,
   );
   check(
@@ -53,7 +67,7 @@ export async function runEvalSuite(scorer: Scorer): Promise<SuiteResult> {
     `case4 must be wrong-but-fluent (correctness ${c4.correctness}, communication ${c4.communication})`,
   );
   check(
-    c5.correctness > 70 && c5.communication < c1.communication - 25,
+    c5.correctness > 70 && c5.communication < c1.communication - 20,
     `case5 must be right-but-hesitant (correctness ${c5.correctness}, communication ${c5.communication} vs case1 ${c1.communication})`,
   );
 

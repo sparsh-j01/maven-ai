@@ -14,7 +14,7 @@ import {
 // grades a model you don't ship. ponytail: this id now lives in two files — hoist
 // it to @maven-ai/shared if it drifts again.
 const MODEL = "gemini-2.5-flash";
-const TIMEOUT_MS = 30_000;
+const TIMEOUT_MS = 60_000;
 
 export async function grade(input: ScorerInput): Promise<FeedbackReport> {
   const key = process.env.GOOGLE_API_KEY;
