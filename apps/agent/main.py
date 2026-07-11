@@ -96,7 +96,9 @@ def _make_session(keyterms: Optional[list[str]] = None) -> AgentSession:
     if keyterms:
         stt_kwargs["keyterms"] = keyterms
     return AgentSession(
-        vad=silero.VAD.load(),
+        # No VAD: turn-taking is 100% push-to-talk (turn_detection="manual" +
+        # commit_user_turn on mic release). A VAD here re-introduces silence-based
+        # endpointing that ends the turn ~2s into a thinking pause — the bug.
         stt=deepgram.STT(**stt_kwargs),
         llm=google.LLM(model="gemini-2.5-flash"),
         tts=deepgram.TTS(model="aura-asteria-en"),
@@ -573,6 +575,7 @@ async def entrypoint(ctx: JobContext) -> None:
     def _on_unmuted(_p: rtc.RemoteParticipant, pub: rtc.RemoteTrackPublication) -> None:
         if pub.source != rtc.TrackSource.SOURCE_MICROPHONE:
             return
+        logger.info(">>> UNMUTE fired — mic on, clearing turn buffer")
         committed["v"] = False
         try:
             session.clear_user_turn()  # begin this turn from a clean buffer
@@ -583,6 +586,7 @@ async def entrypoint(ctx: JobContext) -> None:
     def _on_muted(_p: rtc.RemoteParticipant, pub: rtc.RemoteTrackPublication) -> None:
         if pub.source != rtc.TrackSource.SOURCE_MICROPHONE or committed["v"]:
             return
+        logger.info(">>> MUTE fired — mic off, committing turn")
         committed["v"] = True
         try:
             session.commit_user_turn()  # button released -> end the turn now
