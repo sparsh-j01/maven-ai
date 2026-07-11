@@ -7,6 +7,7 @@ export type ScoreOutput = {
   completeness: number; // 0–100: did they REACH the answer? Catches case 2.
   communication: number; // 0–100: how clearly delivered, independent of both.
   evidence: string; // must be a verbatim span from the candidate's transcript
+  claimAudit: { claim: string; verdict: "true" | "false"; why: string }[];
 };
 
 export type Scorer = (input: ScorerInput) => ScoreOutput | Promise<ScoreOutput>;
@@ -26,6 +27,7 @@ export async function runEvalSuite(scorer: Scorer): Promise<SuiteResult> {
         completeness: -1,
         communication: -1,
         evidence: "",
+        claimAudit: [],
       });
       console.error(`${c.name}: grade failed — ${(e as Error).message}`);
     }
@@ -71,8 +73,32 @@ export async function runEvalSuite(scorer: Scorer): Promise<SuiteResult> {
     `case5 must be right-but-hesitant (correctness ${c5.correctness}, communication ${c5.communication} vs case1 ${c1.communication})`,
   );
 
-  // Doesn't fabricate. "".includes("") is true, so the length guard is load-bearing.
+// Case 4 caught the PLANTED errors, not invented ones. It reliably finds 3 of
+  // 4 at temp 0 (misses the fail-closed/availability framing), so assert >= 3.
+  const c4False = c4.claimAudit.filter((a) => a.verdict === "false").length;
+  check(c4False >= 3, `case4: expected >=3 false claims, got ${c4False}`);
+
+  // Overcorrection guard — case1 is entirely true, including "fail open protects
+  // availability" (same jargon shape as case4's false "fail closed"). A false
+  // positive here means the grader distrusts vocabulary instead of judging claims.
+  check(
+    c1.claimAudit.every((a) => a.verdict === "true"),
+    `case1 false positives: ${c1.claimAudit.filter((a) => a.verdict === "false").map((a) => a.claim).join(" | ")}`,
+  );
+
+  // No fabricated claims — every audited claim must be verbatim candidate speech.
+  // Worse than a bad score: a made-up claim penalizes a candidate for words they
+  // never said.
   for (const c of CASES) {
+    const said = candidateText(c.input);
+    for (const a of g(c.name).claimAudit) {
+      check(
+        a.claim.length > 0 && said.includes(a.claim),
+        `${c.name}: fabricated claim not in transcript: ${JSON.stringify(a.claim)}`,
+      );
+    }
+  }
+    for (const c of CASES) {
     const said = candidateText(c.input);
     const e = g(c.name).evidence;
     check(
@@ -106,6 +132,7 @@ export const naiveScorer: Scorer = (input) => {
     completeness: Math.min(words, 100),
     communication: Math.max(0, 100 - hedges * 20),
     evidence: longestCandidateTurn(input),
+    claimAudit: [],
   };
 };
 
@@ -117,29 +144,46 @@ const ORACLE: Record<string, ScoreOutput> = {
     correctness: 88,
     completeness: 90,
     communication: 85,
+    claimAudit: [
+      { claim: "token bucket in Redis with atomic Lua", verdict: "true", why: "correct" },
+    ],
     evidence: "token bucket in Redis with atomic Lua",
   },
   "weak-junior-technical": {
     correctness: 48,
     completeness: 30,
+    claimAudit: [
+      { claim: "two for loops and check every pair", verdict: "true", why: "brute force works" },
+    ],
     communication: 32,
     evidence: "two for loops and check every pair",
   },
   "mixed-mid-behavioral": {
     correctness: 74,
     completeness: 75,
+    claimAudit: [],
     communication: 80,
     evidence: "I pulled the error rates",
   },
   "long-confident-wrong": {
     correctness: 25,
     completeness: 40,
+    claimAudit: [
+      { claim: "Redis is single-threaded, so INCR and EXPIRE execute as one atomic unit", verdict: "false", why: "sequence isn't atomic" },
+      { claim: "The sliding window gives exact enforcement", verdict: "false", why: "counter approximates" },
+      { claim: "raise the TTL on that key", verdict: "false", why: "TTL doesn't cut writes" },
+      { claim: "fail closed and reject every request; that protects availability", verdict: "false", why: "fail-closed reduces availability" },
+    ],
     communication: 82,
     evidence: "sliding-window counter in Redis",
   },
 "short-hesitant-right": {
     correctness: 85,
     completeness: 80,
+    claimAudit: [
+      { claim: "two loops, n squared", verdict: "true", why: "correct" },
+      { claim: "Or a Set — one pass, n time, n space", verdict: "true", why: "correct optimal" },
+    ],
     communication: 40,
     evidence: "Or a Set — one pass, n time, n space",
   },
@@ -173,5 +217,6 @@ export async function geminiScorer(input: ScorerInput): Promise<ScoreOutput> {
     completeness: r.completeness,
     communication: r.deliveryScore,
     evidence: r.evidence,
+    claimAudit: r.claimAudit ?? [],
   };
 }
