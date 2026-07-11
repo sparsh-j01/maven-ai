@@ -46,6 +46,7 @@ const PLANS = [
       "Adaptive voice interviewer",
       "Live coding round",
       "Rubric report + readiness score",
+      "Model answers for every weak spot",
     ],
   },
   {
@@ -58,7 +59,6 @@ const PLANS = [
     features: [
       "Unlimited interviews — no monthly cap",
       "AI coach: a personalized study plan",
-      "Model answers for every weak spot",
       "Full transcript & report history",
     ],
   },
@@ -111,7 +111,7 @@ const FAQS = [
   },
   {
     q: "How am I scored?",
-    a: "Every interview ends with a detailed report that evaluates communication, technical knowledge, problem solving, reasoning, and confidence. You'll receive rubric-based scores, actionable feedback, strengths, weak areas, and—on Pro—model answers for improvement.",
+    a: "Every interview ends with a detailed report that evaluates communication, technical knowledge, problem solving, reasoning, and confidence. You'll receive rubric-based scores, actionable feedback, strengths, weak areas, and model answers showing what a strong response looks like — on every plan.",
   },
   {
     q: "Can I replay my interviews?",
@@ -123,7 +123,7 @@ const FAQS = [
   },
   {
     q: "What's included in the Free plan?",
-    a: "The Free plan includes 3 complete interviews every month, including résumé tailoring, adaptive questioning, live coding, and scoring. Pro removes interview limits and adds unlimited history, model answers, and premium feedback features.",
+    a: "The Free plan includes 3 complete interviews every month — including résumé tailoring, adaptive questioning, live coding, scoring, and model answers for your weak spots. Pro removes the monthly limit and adds an AI-coach study plan plus unlimited report history.",
   },
 ] as const;
 
