@@ -22,14 +22,15 @@ Most "AI interview" demos are a text box wired to a chat completion. Maven AI is
 built the way a production voice product actually is: a long-lived stateful voice
 worker separate from the serverless web app, a turn-based audio pipeline over
 WebRTC, a state machine driven by tool-use, and an async scoring job that grades
-the transcript after the call. The interesting engineering is the real-time loop,
-not the UI.
+the transcript after the call. The interesting engineering is the real-time loop
+and the rigor of the scoring, not the UI.
 
 ## Highlights
 
-- **Turn-based voice pipeline** (VAD → STT → LLM → TTS) over LiveKit/WebRTC.
-  Push-to-talk, no barge-in: clean turn ownership that stays reliable on flaky
-  connections.
+- **Turn-based voice pipeline** (STT → LLM → TTS) over LiveKit/WebRTC.
+  Push-to-talk with manual turn control and no barge-in: the candidate's turn
+  ends when they release the mic, so pausing mid-answer to think never cuts them
+  off. Clean turn ownership that stays reliable on flaky connections.
 - **Provider adapters** for STT, LLM, and TTS. Swapping Gemini → Claude or
   Deepgram → Cartesia is a config change, not a rewrite.
 - **State machine + tool-use** drives the interview through phases
@@ -38,13 +39,83 @@ not the UI.
 - **Async scored reports.** The interview ends instantly; a durable background
   job grades each rubric competency with structured output and drafts model
   answers for weak responses.
+- **A scorer you can trust.** The feedback grader is measured, not assumed — an
+  eval harness proves it distinguishes a good answer from a fluent wrong one, on
+  the exact model that ships. See [Evaluating the scorer](#evaluating-the-scorer).
 - **RAG personalization.** Resume + role embedded and matched against a curated
   question bank (Postgres + pgvector) so questions stay grounded.
-- **Evals in CI.** Golden-transcript scoring tests and an LLM-as-judge check on
-  question quality, so a bad prompt change cannot merge silently.
 - **Regional billing.** Free (3 fully-tailored interviews/mo) vs Pro (unlimited);
   ₹ via Razorpay in India, $ via Stripe everywhere else, monthly or annual
   (≈2 months free) — region auto-detected by IP with a manual currency toggle.
+
+## Evaluating the scorer
+
+The feedback report is only as good as the model grading it, and "the scores look
+reasonable" is not a test. This project treats the scorer as something to be
+measured, not trusted — with a harness (`packages/evals`) that proves the grader
+distinguishes a *good answer* from a *fluent wrong one*, on the exact model that
+ships.
+
+### The problem a naive eval misses
+
+The first version of this suite had three hand-written transcripts (strong, weak,
+mixed) and checked that each landed in an expected score band. It passed 3/3 — and
+measured nothing. A scorer that simply counts words passes all three, because the
+strong candidate talks the most and the weak one talks the least. Length and
+score were correlated, so the suite couldn't tell a real grader from a word
+counter.
+
+The fix was to build cases where **fluency and correctness point in opposite
+directions**:
+
+- `long-confident-wrong` — the *longest* transcript, articulate and confident,
+  with four planted technical errors (e.g. claiming `INCR` + `EXPIRE` are atomic
+  as a pair). Must score *lowest* on correctness.
+- `short-hesitant-right` — the *shortest* transcript, full of hedging, that
+  reaches the optimal solution. Must score *high* on correctness.
+
+No word-count or hedge-count heuristic can satisfy both. A dedicated sanity check
+(`pnpm eval:sanity`) runs a deliberately dumb word-count scorer against the suite
+and asserts it is **rejected** — so the suite can never silently degrade into one
+that measures verbosity.
+
+### Three axes, not one score
+
+A single 0–100 score can't separate "wrong but fluent" from "right but can't
+explain it" from "honest but incomplete." The grader emits three independent axes:
+
+- **correctness** — were the claims true? Scored as `100 − 20 × (false claims)`,
+  where the model must first list every technical claim and mark it true/false.
+  Anchoring the score to a *count* rather than a judgment makes it stable.
+- **completeness** — did the candidate reach the answer? Scored as
+  `(components produced ÷ total) × 100` against the ideal answer's components.
+- **deliveryScore** — how clearly it was delivered, independent of whether it was
+  right.
+
+### Grading the reasoning, not just the number
+
+A low score for the wrong reasons is not a correct grader. The suite asserts on
+the model's *claim audit*, not just its output:
+
+- The grader must catch the *planted* errors, not invent different ones.
+- It must not flag a correct claim as false ("fail open protects availability" is
+  right; "fail closed protects availability" is wrong — the grader must tell them
+  apart by the proposition, not the shared vocabulary).
+- Every claim it quotes must be **verbatim** from the transcript — a plain-code
+  check that catches the model fabricating a claim and penalizing a candidate for
+  words they never said.
+
+### Determinism
+
+All grading runs at `temperature: 0`, so scores are reproducible and can be
+regression-tested. Any axis that drifts run-to-run is re-anchored to a countable
+rule until it's stable.
+
+```bash
+pnpm eval:sanity   # assert a word-count scorer is REJECTED (no API key needed)
+pnpm test          # standing tests: fakes behave, no API calls
+pnpm eval:live     # the real grader through every assertion (~5 API calls)
+```
 
 ## Architecture
 
@@ -60,7 +131,7 @@ session open for minutes.
    • mint scoped tokens          │ agent joins room
    • CRUD / webhooks             ▼
    • Clerk · billing       Voice Agent (Python · LiveKit Agents)
-            │                VAD → STT → LLM → TTS loop
+            │                STT → LLM → TTS loop (push-to-talk turns)
             ▼                tools: next_question, score_answer,
    Postgres + pgvector             run_code, end_interview
    Inngest (async report) ◄────────┘
@@ -76,8 +147,8 @@ LiveKit token. All third-party calls go through the BFF or the agent.
 | Web / BFF | Next.js 15 (App Router), React 19, TypeScript, Tailwind |
 | Auth | Clerk |
 | Realtime | LiveKit (WebRTC) |
-| Voice agent | Python, LiveKit Agents (VAD → STT → LLM → TTS) |
-| LLM / STT / TTS | Gemini Flash / Deepgram / Deepgram Aura (behind adapters) |
+| Voice agent | Python, LiveKit Agents (STT → LLM → TTS, push-to-talk turns) |
+| LLM / STT / TTS | Gemini Flash / Deepgram (nova-3, en-IN) / Deepgram Aura (behind adapters) |
 | Data | Postgres + pgvector, Drizzle ORM |
 | Storage | Cloudflare R2 (audio + resumes) |
 | Async | Inngest |
@@ -101,7 +172,11 @@ infra/
 
 ## Getting started
 
-**Requirements:** Node 22.13+ (pnpm 11 needs it), pnpm 11, Docker (for local Postgres/Redis).
+**Requirements:** Node 22.13+ (pnpm 11 needs it), pnpm 11, Docker (for local
+Postgres/Redis), Python 3.9+ (for the voice agent).
+
+The app runs as four processes in development: local infra (Docker), the web app,
+the voice agent, and the async job runner (Inngest).
 
 ```bash
 pnpm install
@@ -110,6 +185,16 @@ pnpm bootstrap              # create .env (linked into apps/web + packages/db)
 docker compose up -d        # local Postgres (pgvector) + Redis
 pnpm db:push                # apply the schema
 pnpm dev                    # run the web app
+```
+
+Then, in separate terminals, start the voice agent and the async job runner:
+
+```bash
+# voice agent (joins each interview room via LiveKit Cloud)
+cd apps/agent && .venv/bin/python main.py dev
+
+# async report runner (point -u at the web app's actual port)
+INNGEST_DEV=1 npx inngest-cli@latest dev -u http://localhost:3000/api/inngest
 ```
 
 ### Commands
@@ -121,7 +206,8 @@ pnpm dev                    # run the web app
 | `pnpm build` | Build all packages |
 | `pnpm lint` / `pnpm typecheck` | Lint / type-check |
 | `pnpm test` | Run tests (vitest) |
-| `pnpm eval` | Grade golden transcripts through the scorer (offline without `GOOGLE_API_KEY`) |
+| `pnpm eval:sanity` | Assert a word-count scorer is rejected by the eval suite (no API key needed) |
+| `pnpm eval:live` | Run the real grader through every eval assertion (requires `GOOGLE_API_KEY`) |
 | `pnpm db:generate` | Generate SQL migrations from the schema |
 | `pnpm db:push` | Push the schema straight to the database |
 
@@ -147,15 +233,24 @@ pnpm dev                    # run the web app
   malformed model response degrades to the deterministic plan.
 - **Webhooks are signature-verified** — Stripe and Razorpay billing webhooks
   authenticate by HMAC signature (they are not Clerk-protected).
+- **Premium content is gated server-side** — the Pro study plan is never
+  generated for free users (dropped from the prompt and response schema, so no
+  tokens are spent) and never sent to the browser; the free report renders a
+  static decoy, so it cannot be revealed by stripping CSS.
 
-## Roadmap
+## Build log
 
-1. Monorepo scaffold, DB schema, auth, dashboard shell 
-2. LiveKit token minting + room join + text echo agent (prove transport) 
-3. Real voice loop: turn-based push-to-talk, VAD → STT → LLM → TTS, reconnect handling 
-4. Interview state machine + tools + question bank + plan generation 
-5. End → async feedback report + rubric radar + transcript playback 
-6. Coding round (Monaco + sandbox + `run_code`) 
-7. Resume upload + RAG personalization
-8. Billing (Stripe + Razorpay, monthly/annual) + entitlements, observability, evals, CI/CD
-9. UI/UX polish (loading skeletons, transitions, empty/error states)
+Built and in place:
+1. ✓ Monorepo scaffold, DB schema, auth, dashboard shell
+2. ✓ LiveKit token minting + room join + text echo agent
+3. ✓ Real voice loop: push-to-talk (manual turn control), STT → LLM → TTS, reconnect handling
+4. ✓ Interview state machine + tools + question bank + plan generation
+5. ✓ End → async feedback report + rubric radar + transcript
+6. ✓ Coding round (Monaco + sandbox + run_code)
+7. ✓ Resume upload + RAG personalization
+8. ✓ Billing (Stripe + Razorpay) + entitlements, observability, evals, CI/CD
+9. ✓ UI/UX polish (skeletons, transitions, empty/error states)
+
+Next:
+- Expand the eval suite beyond the current scoring axes (competency coverage, adversarial cases)
+- Harden reliability (retry/backoff on external calls, cost instrumentation)
