@@ -17,7 +17,7 @@ const sans = Geist({ subsets: ["latin"], variable: "--font-sans" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
-  title: "Maven · Voice mock interviews",
+  title: "Maven",
   description:
     "Practice interviews with a real-time voice AI. Take clean turns, run a live coding round, and get a rubric-scored report.",
 };
