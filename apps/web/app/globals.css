@@ -3,210 +3,133 @@
 @tailwind utilities;
 
 /* ============================================================================
-   Viva Glass — deep glassmorphism in two themes. Dark = deep espresso-black with
-   brick/teal light blooming behind frosted panels; light = warm frosted daylight.
-   Neutral roles invert per theme; brand accents (brick, teal) hold. Values are
-   space-separated RGB triples so `<alpha-value>` works. Frosted surfaces read the
-   --glass-* film tokens, so one `.glass` utility flips with the theme. Roles are
-   semantic: ground=page, panel=solid fallback surface, soft=inset, fg=text,
-   muted=2nd text, accent=brick (brand/CTA), teal=your-turn/live, amber=thinking,
-   danger=error.
+   "The Interview Desk" — an editorial, type-led language in two themes. Anti-
+   glass: flat paper/ink with a single cobalt signal, hairline rules, and a faint
+   paper grain. Neutral roles invert per theme; the accent (cobalt) and the room's
+   semantic colours (teal=your-turn, amber=thinking, danger=error) hold. Values are
+   space-separated RGB triples so `<alpha-value>` works. The old `.glass` utility is
+   repurposed into a paper panel, so every existing card flips with one change.
+   Roles: ground=page, panel=card, soft=inset, fg=ink, muted=2nd text, hair=rule.
    ========================================================================== */
 :root {
   color-scheme: light;
-  --ground: 245 238 230;
-  --panel: 255 250 245;
-  --soft: 236 225 214;
-  --fg: 32 24 22;
-  --muted: 106 90 82;
-  --accent: 188 56 42;
-  --teal: 28 108 136;
-  --amber: 166 106 22;
-  --danger: 174 44 32;
-  --on-accent: 255 250 246;
-  /* Frosted-daylight glass: near-opaque white film. */
-  --glass: 255 255 255;
-  --glass-a: 0.55;
-  --glass-brd: 0.75;
-  --glass-hi: 0.9;
-  --glass-shadow: 0 24px 60px -28px rgb(70 40 30 / 0.28);
+  --ground: 246 245 242;   /* cool paper */
+  --panel: 252 251 249;    /* card */
+  --soft: 238 236 230;     /* inset */
+  --fg: 23 23 26;          /* ink */
+  --muted: 106 106 110;
+  --hair: 226 224 218;     /* hairline rule */
+  --accent: 31 73 222;     /* cobalt — the one signal */
+  --teal: 20 112 96;       /* your turn / live */
+  --amber: 166 106 22;     /* thinking */
+  --danger: 174 44 32;     /* error */
+  --on-accent: 255 255 255;
+  --grain: 0.45;
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  /* Deep near-black with a faint warmth; the body glows do the brand coloring. */
-  --ground: 15 13 17;
-  --panel: 27 25 31;
-  --soft: 40 37 46;
-  --fg: 240 236 244;
-  --muted: 158 152 168;
-  --accent: 232 100 82;
-  --teal: 112 192 216;
+  --ground: 19 20 24;
+  --panel: 25 27 32;
+  --soft: 37 39 46;
+  --fg: 236 235 230;
+  --muted: 154 154 159;
+  --hair: 42 44 50;
+  --accent: 124 151 255;
+  --teal: 74 200 160;
   --amber: 236 182 104;
   --danger: 232 112 96;
-  --on-accent: 255 248 240;
-  /* Deep glass: a thin light film that lets the bloom read through. */
-  --glass: 255 255 255;
-  --glass-a: 0.06;
-  --glass-brd: 0.1;
-  --glass-hi: 0.16;
-  --glass-shadow: 0 40px 80px -30px rgb(0 0 0 / 0.7);
+  --on-accent: 11 12 16;
+  --grain: 0.55;
 }
 
-/* OS preference wins only when the user hasn't explicitly chosen light. The
-   inline script in layout.tsx normally sets data-theme before paint; this is the
-   no-JS / pre-hydration fallback (same values as [data-theme=dark]). */
+/* OS-dark fallback for pre-hydration / no-JS (mirrors [data-theme=dark]). */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --ground: 15 13 17;
-    --panel: 27 25 31;
-    --soft: 40 37 46;
-    --fg: 240 236 244;
-    --muted: 158 152 168;
-    --accent: 232 100 82;
-    --teal: 112 192 216;
+    --ground: 19 20 24;
+    --panel: 25 27 32;
+    --soft: 37 39 46;
+    --fg: 236 235 230;
+    --muted: 154 154 159;
+    --hair: 42 44 50;
+    --accent: 124 151 255;
+    --teal: 74 200 160;
     --amber: 236 182 104;
     --danger: 232 112 96;
-    --on-accent: 255 248 240;
-    --glass: 255 255 255;
-    --glass-a: 0.06;
-    --glass-brd: 0.1;
-    --glass-hi: 0.16;
-    --glass-shadow: 0 40px 80px -30px rgb(0 0 0 / 0.7);
+    --on-accent: 11 12 16;
+    --grain: 0.55;
   }
 }
 
 body {
   @apply text-fg antialiased;
-  /* Brand light behind the glass: brick from the top-left, teal from the right,
-     a soft brick pool at the base. Tinted off the accent tokens so it flips with
-     the theme; fixed so panels feel like they float over one continuous light. */
   background-color: rgb(var(--ground));
-  background-image:
-    radial-gradient(60rem 55rem at 8% -10%, rgb(var(--accent) / 0.16), transparent 60%),
-    radial-gradient(52rem 52rem at 104% 6%, rgb(var(--teal) / 0.14), transparent 58%),
-    radial-gradient(70rem 48rem at 50% 118%, rgb(var(--accent) / 0.1), transparent 62%);
-  background-attachment: fixed;
   min-height: 100vh;
 }
 
-/* Frosted surface: translucent film + blur + a top light edge. One utility for
-   every card, panel and pill, theme-aware through the --glass-* tokens. */
+/* Faint paper grain over the whole surface — tactility, not decoration. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  opacity: var(--grain);
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 170px;
+}
+
+/* Paper panel — the former frosted `.glass`, now a flat card with a hairline.
+   One change re-skins every card, pill, and panel across the app. */
 @layer components {
   .glass {
-    background-color: rgb(var(--glass) / var(--glass-a));
-    backdrop-filter: blur(20px) saturate(160%);
-    -webkit-backdrop-filter: blur(20px) saturate(160%);
-    border: 1px solid rgb(var(--glass) / var(--glass-brd));
-    box-shadow:
-      inset 0 1px 0 0 rgb(var(--glass) / var(--glass-hi)),
-      var(--glass-shadow);
+    background-color: rgb(var(--panel));
+    border: 1px solid rgb(var(--hair));
+    box-shadow: none;
   }
 }
+
+/* Editorial masked line-reveal (used by GSAP fallbacks and pure-CSS spots). */
+.mask-line { overflow: hidden; }
 
 /* --- Interview room: speaker orb (also the landing "your turn" indicator) --- */
-/* Calm idle "breathe"; during real speech the orb is driven by audio amplitude
-   inline instead. */
 @keyframes blob-breathe {
-  0%,
-  100% {
-    transform: scale(0.97);
-  }
-  50% {
-    transform: scale(1.03);
-  }
+  0%, 100% { transform: scale(0.97); }
+  50% { transform: scale(1.03); }
 }
+.blob-breathe { animation: blob-breathe 3.4s ease-in-out infinite; }
 
-.blob-breathe {
-  animation: blob-breathe 3.4s ease-in-out infinite;
-}
-
-/* Voice orb: waveform bars, and the organic shape-morph while a voice is
-   active. Two morph layers run at different speeds (b reversed) so they never
-   line up — the blob wanders instead of looping. */
 @keyframes blob-morph {
-  0%,
-  100% {
-    border-radius: 46% 54% 51% 49% / 54% 47% 53% 46%;
-  }
-  25% {
-    border-radius: 60% 40% 42% 58% / 48% 62% 38% 52%;
-  }
-  50% {
-    border-radius: 38% 62% 63% 37% / 60% 42% 58% 40%;
-  }
-  75% {
-    border-radius: 52% 48% 44% 56% / 40% 54% 46% 60%;
-  }
+  0%, 100% { border-radius: 46% 54% 51% 49% / 54% 47% 53% 46%; }
+  25% { border-radius: 60% 40% 42% 58% / 48% 62% 38% 52%; }
+  50% { border-radius: 38% 62% 63% 37% / 60% 42% 58% 40%; }
+  75% { border-radius: 52% 48% 44% 56% / 40% 54% 46% 60%; }
 }
-
-.orb-wave {
-  animation: hero-wave 900ms ease-in-out infinite;
-}
-.orb-morph-a {
-  animation: blob-morph 4.2s ease-in-out infinite;
-}
-.orb-morph-b {
-  animation: blob-morph 5.6s ease-in-out infinite reverse;
-}
+.orb-wave { animation: hero-wave 900ms ease-in-out infinite; }
+.orb-morph-a { animation: blob-morph 4.2s ease-in-out infinite; }
+.orb-morph-b { animation: blob-morph 5.6s ease-in-out infinite reverse; }
 
 /* --- Landing hero mockup: reacting waveform, fading question, follow-up pop --- */
 @keyframes hero-wave {
-  0%,
-  100% {
-    transform: scaleY(0.28);
-  }
-  50% {
-    transform: scaleY(1);
-  }
+  0%, 100% { transform: scaleY(0.28); }
+  50% { transform: scaleY(1); }
 }
-
 @keyframes hero-fade {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
 }
-
 @keyframes hero-pop {
-  0% {
-    opacity: 0;
-    transform: scale(0.92);
-  }
-  60% {
-    transform: scale(1.03);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
+  0% { opacity: 0; transform: scale(0.92); }
+  60% { transform: scale(1.03); }
+  100% { opacity: 1; transform: scale(1); }
 }
-
-.hero-fade {
-  animation: hero-fade 0.5s ease-out both;
-}
-
-.hero-pop {
-  animation: hero-pop 0.45s ease-out both;
-}
+.hero-fade { animation: hero-fade 0.5s ease-out both; }
+.hero-pop { animation: hero-pop 0.45s ease-out both; }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-pulse {
-    animation: none;
-  }
-  .blob-breathe,
-  .orb-wave,
-  .orb-morph-a,
-  .orb-morph-b {
-    animation: none;
-  }
-  .hero-fade,
-  .hero-pop {
-    animation: none;
-  }
+  .animate-pulse { animation: none; }
+  .blob-breathe, .orb-wave, .orb-morph-a, .orb-morph-b { animation: none; }
+  .hero-fade, .hero-pop { animation: none; }
 }

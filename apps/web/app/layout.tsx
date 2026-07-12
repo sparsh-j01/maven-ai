@@ -1,19 +1,20 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono, Newsreader, Geist } from "next/font/google";
+import { Fraunces, Geist, JetBrains_Mono } from "next/font/google";
 import type { ReactNode } from "react";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { PostHogProvider } from "@/components/posthog-provider";
 
-const geist = Geist({ subsets: ["latin"], variable: "--font-display" });
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
-const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
-const serif = Newsreader({
+// "The Interview Desk": Fraunces is the editorial serif (headlines, wordmark,
+// transcript quotes), Geist the body sans, JetBrains Mono the utility/label face.
+const display = Fraunces({
   subsets: ["latin"],
   style: ["normal", "italic"],
-  variable: "--font-serif",
+  variable: "--font-display",
 });
+const sans = Geist({ subsets: ["latin"], variable: "--font-sans" });
+const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
   title: "Maven · Voice mock interviews",
@@ -30,7 +31,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <html
         lang="en"
         suppressHydrationWarning
-        className={cn(inter.variable, mono.variable, serif.variable, "font-sans", geist.variable)}
+        className={cn(display.variable, sans.variable, mono.variable, "font-sans")}
       >
         <body className="font-sans">
           {/* Set the theme before first paint to avoid a flash. */}

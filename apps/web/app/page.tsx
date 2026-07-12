@@ -7,8 +7,9 @@ import {
 import { Check, ChevronDown } from "lucide-react";
 import { cookies, headers } from "next/headers";
 import Link from "next/link";
-import { HeroInterview } from "@/components/hero-interview";
+import { HeroDesk } from "@/components/hero-desk";
 import { HowItWorks } from "@/components/how-it-works";
+import { ScrollReveals } from "@/components/scroll-reveals";
 import { PrefToggle } from "@/components/pref-toggle";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { buttonVariants } from "@/components/ui/button";
@@ -75,13 +76,6 @@ const PLANS = [
       "Onboarding & training",
     ],
   },
-] as const;
-
-const HERO_FEATURES = [
-  { title: "Adaptive follow-ups", blurb: "Digs deeper based on your answer" },
-  { title: "Live coding", blurb: "Solve real problems while you talk" },
-  { title: "System design", blurb: "Whiteboard architecture out loud" },
-  { title: "Readiness score", blurb: "A 0–100 read on how ready you are" },
 ] as const;
 
 const FAQS = [
@@ -272,78 +266,32 @@ export default async function LandingPage() {
           </nav>
         </header>
 
-        <section className="grid items-center gap-14 pt-8 lg:grid-cols-[1.05fr_1fr] lg:items-start lg:pt-12">
-          <div>
-            <p className="font-mono text-xs uppercase tracking-widest text-muted">
-              Real-time voice mock interviews
-            </p>
-            <h1 className="mt-5 font-display text-[clamp(2.75rem,6.5vw,4.75rem)] font-semibold leading-[1.04] tracking-tight">
-              Practice interviews that{" "}
-              <em className="text-accent">feel&nbsp;real.</em>
-            </h1>
-            <p className="mt-6 max-w-lg text-lg leading-relaxed text-fg/70">
-              An AI interviewer that digs into your reasoning instead of reading
-              from a script — then scores how you think in a report you can
-              replay.
-            </p>
-            <div className="mt-8 flex flex-wrap items-center gap-6">
-              <SignedOut>
-                <SignUpButton mode="modal">
-                  <button className={cta}>Start a free interview</button>
-                </SignUpButton>
-              </SignedOut>
-              <SignedIn>
-                <Link href="/interview/new" className={cta}>
-                  Start a new interview
-                </Link>
-              </SignedIn>
-              <a
-                href="#how"
-                className="text-sm text-muted underline-offset-4 transition-colors hover:text-fg hover:underline"
-              >
-                See how it works
-              </a>
-            </div>
-            {/* Credibility under the CTA — honest reassurance, no fabricated
-                stats or logos while the app isn't live yet. */}
-            <p className="mt-5 flex items-center gap-2 text-sm text-muted">
-              <span
-                className="h-1.5 w-1.5 shrink-0 rounded-full bg-teal"
-                aria-hidden
-              />
-              Built for FAANG &amp; MANGOS-style interviews
-            </p>
-            {/* Tiny glass cards, not a bullet list — each sells the benefit,
-                not just names the feature. */}
-            <ul className="mt-8 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {HERO_FEATURES.map((f, i) => (
-                <li
-                  key={f.title}
-                  className={`glass rounded-card px-3.5 py-2.5 ${
-                    i === HERO_FEATURES.length - 1 &&
-                    HERO_FEATURES.length % 2 === 1
-                      ? "sm:col-span-2"
-                      : ""
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Check className="h-3.5 w-3.5 shrink-0 text-teal" aria-hidden />
-                    <span className="text-sm font-medium">{f.title}</span>
-                  </div>
-                  <p className="mt-0.5 pl-[22px] text-xs leading-snug text-muted">
-                    {f.blurb}
-                  </p>
-                </li>
-              ))}
-            </ul>
+        <HeroDesk />
+
+        {/* editorial credibility rule */}
+        <div className="-mx-6 border-b border-hair px-6">
+          <div className="flex flex-wrap items-center gap-x-10 gap-y-3 py-4 font-mono text-[12.5px] text-muted">
+            <span className="flex items-center gap-2">
+              <span className="text-[11px] uppercase tracking-[0.14em] text-fg/40">Format</span>
+              <b className="font-semibold text-fg">Push-to-talk, clean turns</b>
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="text-[11px] uppercase tracking-[0.14em] text-fg/40">Rounds</span>
+              <b className="font-semibold text-fg">Technical · Coding · System design</b>
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="text-[11px] uppercase tracking-[0.14em] text-fg/40">Output</span>
+              <b className="font-semibold text-fg">Rubric report + readiness score</b>
+            </span>
           </div>
+        </div>
 
-          <HeroInterview />
-        </section>
+        <ScrollReveals />
+        <div data-reveal>
+          <HowItWorks />
+        </div>
 
-        <HowItWorks />
-
-        <section id="pricing" className="mt-28 scroll-mt-10">
+        <section id="pricing" data-reveal className="mt-28 scroll-mt-10">
           <p className="font-mono text-xs uppercase tracking-widest text-muted">
             Pricing
           </p>
@@ -415,7 +363,7 @@ export default async function LandingPage() {
           </div>
         </section>
 
-        <section id="faq" className="mt-28 scroll-mt-10">
+        <section id="faq" data-reveal className="mt-28 scroll-mt-10">
           <h2 className="text-center font-display text-3xl font-semibold tracking-tight sm:text-4xl">
             Frequently asked questions
           </h2>
@@ -459,7 +407,7 @@ export default async function LandingPage() {
         </section>
 
         {/* Final CTA — the last thing users see before the footer. */}
-        <section className="mt-28">
+        <section data-reveal className="mt-28">
           <div className="glass rounded-card px-6 py-16 text-center sm:py-20">
             <h2 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
               Ready for your next interview?

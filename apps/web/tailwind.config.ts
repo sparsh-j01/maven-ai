@@ -22,20 +22,22 @@ export default {
         teal: "rgb(var(--teal) / <alpha-value>)", // your turn / live
         amber: "rgb(var(--amber) / <alpha-value>)", // AI thinking
         danger: "rgb(var(--danger) / <alpha-value>)", // error / disconnect
-        "on-accent": "rgb(var(--on-accent) / <alpha-value>)", // text on brick
+        "on-accent": "rgb(var(--on-accent) / <alpha-value>)", // text on cobalt
+        hair: "rgb(var(--hair) / <alpha-value>)", // hairline rule
       },
       borderRadius: {
-        DEFAULT: "10px",
-        card: "18px",
-        xl: "24px",
+        // Editorial-crisp: small radii, not glass-round.
+        DEFAULT: "4px",
+        card: "6px",
+        xl: "10px",
       },
       fontFamily: {
-        sans: ["var(--font-inter)", "system-ui", "sans-serif"],
-        // Headings / wordmark — a modern grotesk, distinct from the Inter body.
-        display: ["var(--font-display)", "var(--font-inter)", "system-ui", "sans-serif"],
+        // Geist body sans (not Inter — avoids the AI-default face).
+        sans: ["var(--font-sans)", "system-ui", "sans-serif"],
+        // Fraunces — the editorial serif for headlines, wordmark, and quotes.
+        display: ["var(--font-display)", "Georgia", "serif"],
+        serif: ["var(--font-display)", "Georgia", "serif"],
         mono: ["var(--font-mono)", "ui-monospace", "monospace"],
-        // Kept for the spoken voice only: transcript lines, interviewer quotes.
-        serif: ["var(--font-serif)", "Georgia", "serif"],
       },
       fontSize: {
         // 12 / 14 / 16 / 20 / 28 / 40 scale
