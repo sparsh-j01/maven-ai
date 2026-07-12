@@ -60,6 +60,17 @@ export async function retrieveCandidates(
     );
     if (rows.length === 0) return null; // bank not seeded yet
 
+    // Diagnostics: log what pgvector ranked so we can see whether personalization
+    // actually reorders the bank meaningfully or just shuffles within noise — the
+    // one number that says if RAG is earning its keep over the deterministic order.
+    console.info(
+      `[retrieveCandidates] ranked ${rows.length}; top: ` +
+        rows
+          .slice(0, 5)
+          .map((r) => `${r.slug}=${Number(r.distance).toFixed(3)}`)
+          .join(", "),
+    );
+
     return rerankCandidates(
       planCandidates(input),
       rows.map((r) => r.slug),

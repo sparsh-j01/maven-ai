@@ -35,8 +35,11 @@ LANGUAGE_IDS = {
 
 # ─────────────────────────── reference solvers ───────────────────────────
 # Pure str -> str. Each reads the same input format the public prompt states and
-# returns the expected stdout. Single representative case per problem (ponytail:
-# upgrade to a battery via Judge0 batch submissions when one case isn't enough).
+# returns the expected stdout. TESTS gives each problem MULTIPLE stdins graded
+# all-or-nothing (grade() every case, pass iff all pass), so a solution that
+# hard-codes the answer to one case fails the others (F1, §8.1). The solver
+# derives expected per stdin, so adding a case is adding an input, not a
+# hand-written answer.
 
 
 def _fizzbuzz(s: str) -> str:
@@ -396,64 +399,68 @@ def _jump_game(s: str) -> str:
 
 
 # Secret tests, keyed by the problem id in packages/shared/src/coding.ts. The
-# program reads `stdin` and prints; `solve` derives the expected stdout from it.
+# program reads each `stdin` and prints; `solve` derives the expected stdout. Two
+# cases per problem (a representative case + a second with a DIFFERENT answer — an
+# edge/negative case), so hard-coding one output can't pass. Grow the battery per
+# problem by appending stdins here; __main__ hand-verifies every case's answer.
 TESTS = {
     # easy
-    "c-fizzbuzz": {"stdin": "5\n", "solve": _fizzbuzz},
-    "c-vowel-count": {"stdin": "Hello World\n", "solve": _vowel_count},
-    "c-sum-n": {"stdin": "10\n", "solve": _sum_n},
-    "c-reverse-string": {"stdin": "hello\n", "solve": _reverse_string},
-    "c-max-of-list": {"stdin": "5\n3 7 2 9 4\n", "solve": _max_of_list},
-    "c-count-evens": {"stdin": "6\n1 2 3 4 5 6\n", "solve": _count_evens},
-    "c-factorial": {"stdin": "5\n", "solve": _factorial},
-    "c-palindrome-check": {"stdin": "racecar\n", "solve": _palindrome_check},
-    "c-count-words": {"stdin": "the quick brown fox\n", "solve": _count_words},
-    "c-second-largest": {"stdin": "5\n10 4 8 1 7\n", "solve": _second_largest},
-    "c-gcd": {"stdin": "48 36\n", "solve": _gcd},
-    "c-digit-sum": {"stdin": "12345\n", "solve": _digit_sum},
+    "c-fizzbuzz": {"stdins": ["5\n", "15\n"], "solve": _fizzbuzz},
+    "c-vowel-count": {"stdins": ["Hello World\n", "AEIOU aeiou xyz\n"], "solve": _vowel_count},
+    "c-sum-n": {"stdins": ["10\n", "100\n"], "solve": _sum_n},
+    "c-reverse-string": {"stdins": ["hello\n", "Maven AI\n"], "solve": _reverse_string},
+    "c-max-of-list": {"stdins": ["5\n3 7 2 9 4\n", "4\n-5 -1 -9 -3\n"], "solve": _max_of_list},
+    "c-count-evens": {"stdins": ["6\n1 2 3 4 5 6\n", "5\n2 4 6 8 10\n"], "solve": _count_evens},
+    "c-factorial": {"stdins": ["5\n", "0\n"], "solve": _factorial},
+    "c-palindrome-check": {"stdins": ["racecar\n", "hello\n"], "solve": _palindrome_check},
+    "c-count-words": {"stdins": ["the quick brown fox\n", "a b c d e\n"], "solve": _count_words},
+    "c-second-largest": {"stdins": ["5\n10 4 8 1 7\n", "3\n100 50 75\n"], "solve": _second_largest},
+    "c-gcd": {"stdins": ["48 36\n", "17 5\n"], "solve": _gcd},
+    "c-digit-sum": {"stdins": ["12345\n", "9999\n"], "solve": _digit_sum},
     # medium
-    "c-max-subarray": {"stdin": "9\n-2 1 -3 4 -1 2 1 -5 4\n", "solve": _max_subarray},
-    "c-two-sum": {"stdin": "4\n2 7 11 15\n9\n", "solve": _two_sum},
-    "c-binary-search": {"stdin": "5\n1 3 5 7 9\n7\n", "solve": _binary_search},
-    "c-anagram": {"stdin": "listen\nsilent\n", "solve": _anagram},
-    "c-fibonacci": {"stdin": "10\n", "solve": _fibonacci},
-    "c-count-primes": {"stdin": "10\n", "solve": _count_primes},
-    "c-first-unique-char": {"stdin": "aabbc\n", "solve": _first_unique_char},
-    "c-valid-parentheses": {"stdin": "([]{})\n", "solve": _valid_parentheses},
-    "c-missing-number": {"stdin": "4\n3 0 1 4\n", "solve": _missing_number},
-    "c-majority-element": {"stdin": "7\n3 3 4 2 3 3 3\n", "solve": _majority_element},
-    "c-move-zeroes": {"stdin": "6\n0 1 0 3 12 0\n", "solve": _move_zeroes},
-    "c-power": {"stdin": "2 10\n", "solve": _power},
+    "c-max-subarray": {"stdins": ["9\n-2 1 -3 4 -1 2 1 -5 4\n", "5\n-1 -2 -3 -4 -5\n"], "solve": _max_subarray},
+    "c-two-sum": {"stdins": ["4\n2 7 11 15\n9\n", "4\n1 2 3 4\n8\n"], "solve": _two_sum},
+    "c-binary-search": {"stdins": ["5\n1 3 5 7 9\n7\n", "6\n2 4 6 8 10 12\n5\n"], "solve": _binary_search},
+    "c-anagram": {"stdins": ["listen\nsilent\n", "hello\nworld\n"], "solve": _anagram},
+    "c-fibonacci": {"stdins": ["10\n", "0\n"], "solve": _fibonacci},
+    "c-count-primes": {"stdins": ["10\n", "2\n"], "solve": _count_primes},
+    "c-first-unique-char": {"stdins": ["aabbc\n", "aabb\n"], "solve": _first_unique_char},
+    "c-valid-parentheses": {"stdins": ["([]{})\n", "([)]\n"], "solve": _valid_parentheses},
+    "c-missing-number": {"stdins": ["4\n3 0 1 4\n", "3\n0 1 2\n"], "solve": _missing_number},
+    "c-majority-element": {"stdins": ["7\n3 3 4 2 3 3 3\n", "3\n5 5 5\n"], "solve": _majority_element},
+    "c-move-zeroes": {"stdins": ["6\n0 1 0 3 12 0\n", "4\n0 0 1 2\n"], "solve": _move_zeroes},
+    "c-power": {"stdins": ["2 10\n", "3 0\n"], "solve": _power},
     # hard
-    "c-longest-unique": {"stdin": "abcabcbb\n", "solve": _longest_unique},
-    "c-lcs": {"stdin": "abcde\nace\n", "solve": _lcs},
-    "c-edit-distance": {"stdin": "horse\nros\n", "solve": _edit_distance},
-    "c-coin-change": {"stdin": "3\n1 2 5\n11\n", "solve": _coin_change},
-    "c-lis": {"stdin": "8\n10 9 2 5 3 7 101 18\n", "solve": _lis},
+    "c-longest-unique": {"stdins": ["abcabcbb\n", "aaaa\n"], "solve": _longest_unique},
+    "c-lcs": {"stdins": ["abcde\nace\n", "abc\ndef\n"], "solve": _lcs},
+    "c-edit-distance": {"stdins": ["horse\nros\n", "abc\nabc\n"], "solve": _edit_distance},
+    "c-coin-change": {"stdins": ["3\n1 2 5\n11\n", "2\n2 4\n3\n"], "solve": _coin_change},
+    "c-lis": {"stdins": ["8\n10 9 2 5 3 7 101 18\n", "5\n5 4 3 2 1\n"], "solve": _lis},
     "c-trapping-rain": {
-        "stdin": "12\n0 1 0 2 1 0 1 3 2 1 2 1\n",
+        "stdins": ["12\n0 1 0 2 1 0 1 3 2 1 2 1\n", "6\n4 2 0 3 2 5\n"],
         "solve": _trapping_rain,
     },
-    "c-min-path-sum": {"stdin": "3 3\n1 3 1\n1 5 1\n4 2 1\n", "solve": _min_path_sum},
-    "c-house-robber": {"stdin": "5\n2 7 9 3 1\n", "solve": _house_robber},
-    "c-knapsack": {"stdin": "4 7\n1 3 4 5\n1 4 5 7\n", "solve": _knapsack},
+    "c-min-path-sum": {"stdins": ["3 3\n1 3 1\n1 5 1\n4 2 1\n", "2 2\n1 2\n1 1\n"], "solve": _min_path_sum},
+    "c-house-robber": {"stdins": ["5\n2 7 9 3 1\n", "4\n2 1 1 2\n"], "solve": _house_robber},
+    "c-knapsack": {"stdins": ["4 7\n1 3 4 5\n1 4 5 7\n", "3 4\n1 2 3\n6 10 12\n"], "solve": _knapsack},
     "c-longest-palindrome-substr": {
-        "stdin": "babad\n",
+        "stdins": ["babad\n", "abccba\n"],
         "solve": _longest_palindrome_substr,
     },
     "c-num-islands": {
-        "stdin": "4 5\n11110\n11010\n11000\n00000\n",
+        "stdins": ["4 5\n11110\n11010\n11000\n00000\n", "3 3\n101\n010\n101\n"],
         "solve": _num_islands,
     },
-    "c-jump-game": {"stdin": "5\n2 3 1 1 4\n", "solve": _jump_game},
+    "c-jump-game": {"stdins": ["5\n2 3 1 1 4\n", "4\n1 1 1 1\n"], "solve": _jump_game},
 }
 
 
-def expected_for(problem_id: str) -> str:
-    """The expected stdout for a problem: its reference solver applied to its
-    test stdin. The single source of truth the candidate's output is graded on."""
+def cases_for(problem_id: str) -> list:
+    """Every (stdin, expected) case for a problem — the reference solver applied to
+    each test stdin. The single source of truth the candidate's output is graded on;
+    the caller grades all-or-nothing (grade() per case, pass iff all pass)."""
     test = TESTS[problem_id]
-    return test["solve"](test["stdin"])
+    return [(stdin, test["solve"](stdin)) for stdin in test["stdins"]]
 
 
 def _norm(s: str) -> str:
@@ -470,7 +477,8 @@ async def run_on_judge0(language: str, source: str, stdin: str) -> dict:
     """Execute `source` in the Judge0 sandbox against `stdin`. Returns the raw
     Judge0 submission result (stdout/stderr/status/...). Raises on a missing
     JUDGE0_URL, an unsupported language, or a transport error. We grade the
-    captured stdout ourselves (against expected_for), so Judge0 needn't compare."""
+    captured stdout ourselves (against the reference solver), so Judge0 needn't
+    compare, and we run one submission per hidden case."""
     import aiohttp  # lazy so the pure grading logic stays importable without it
 
     base = os.environ.get("JUDGE0_URL")
@@ -502,54 +510,59 @@ async def run_on_judge0(language: str, source: str, stdin: str) -> dict:
 
 
 if __name__ == "__main__":
-    # Verify every grader: the reference solver, run on the test stdin, must equal
-    # the hand-computed value below. Catches a wrong solver OR a mis-stated prompt
-    # before it can silently pass a bad candidate answer. Grow the bank → add a row.
+    # Verify every grader: the reference solver, run on each test stdin, must equal
+    # the hand-computed value below (one list entry per stdin, in order). Catches a
+    # wrong solver OR a mis-stated prompt before it can silently pass a bad answer.
+    # The two answers per problem must differ so no constant output passes both.
+    # Grow the battery → add a stdin above and its hand-computed answer here.
     EXPECTED = {
-        "c-fizzbuzz": "1\n2\nFizz\n4\nBuzz",
-        "c-vowel-count": "3",
-        "c-sum-n": "55",
-        "c-reverse-string": "olleh",
-        "c-max-of-list": "9",
-        "c-count-evens": "3",
-        "c-factorial": "120",
-        "c-palindrome-check": "YES",
-        "c-count-words": "4",
-        "c-second-largest": "8",
-        "c-gcd": "12",
-        "c-digit-sum": "15",
-        "c-max-subarray": "6",
-        "c-two-sum": "YES",
-        "c-binary-search": "3",
-        "c-anagram": "YES",
-        "c-fibonacci": "55",
-        "c-count-primes": "4",
-        "c-first-unique-char": "4",
-        "c-valid-parentheses": "YES",
-        "c-missing-number": "2",
-        "c-majority-element": "3",
-        "c-move-zeroes": "1 3 12 0 0 0",
-        "c-power": "1024",
-        "c-longest-unique": "3",
-        "c-lcs": "3",
-        "c-edit-distance": "3",
-        "c-coin-change": "3",
-        "c-lis": "4",
-        "c-trapping-rain": "6",
-        "c-min-path-sum": "7",
-        "c-house-robber": "12",
-        "c-knapsack": "9",
-        "c-longest-palindrome-substr": "3",
-        "c-num-islands": "1",
-        "c-jump-game": "2",
+        "c-fizzbuzz": ["1\n2\nFizz\n4\nBuzz", "1\n2\nFizz\n4\nBuzz\nFizz\n7\n8\nFizz\nBuzz\n11\nFizz\n13\n14\nFizzBuzz"],
+        "c-vowel-count": ["3", "10"],
+        "c-sum-n": ["55", "5050"],
+        "c-reverse-string": ["olleh", "IA nevaM"],
+        "c-max-of-list": ["9", "-1"],
+        "c-count-evens": ["3", "5"],
+        "c-factorial": ["120", "1"],
+        "c-palindrome-check": ["YES", "NO"],
+        "c-count-words": ["4", "5"],
+        "c-second-largest": ["8", "75"],
+        "c-gcd": ["12", "1"],
+        "c-digit-sum": ["15", "36"],
+        "c-max-subarray": ["6", "-1"],
+        "c-two-sum": ["YES", "NO"],
+        "c-binary-search": ["3", "-1"],
+        "c-anagram": ["YES", "NO"],
+        "c-fibonacci": ["55", "0"],
+        "c-count-primes": ["4", "0"],
+        "c-first-unique-char": ["4", "-1"],
+        "c-valid-parentheses": ["YES", "NO"],
+        "c-missing-number": ["2", "3"],
+        "c-majority-element": ["3", "5"],
+        "c-move-zeroes": ["1 3 12 0 0 0", "1 2 0 0"],
+        "c-power": ["1024", "1"],
+        "c-longest-unique": ["3", "1"],
+        "c-lcs": ["3", "0"],
+        "c-edit-distance": ["3", "0"],
+        "c-coin-change": ["3", "-1"],
+        "c-lis": ["4", "1"],
+        "c-trapping-rain": ["6", "9"],
+        "c-min-path-sum": ["7", "3"],
+        "c-house-robber": ["12", "4"],
+        "c-knapsack": ["9", "18"],
+        "c-longest-palindrome-substr": ["3", "6"],
+        "c-num-islands": ["1", "5"],
+        "c-jump-game": ["2", "3"],
     }
     assert set(EXPECTED) == set(TESTS), set(EXPECTED) ^ set(TESTS)
     for pid in TESTS:
-        got = expected_for(pid)
-        assert got == EXPECTED[pid], (pid, repr(got), repr(EXPECTED[pid]))
+        got = [expected for _, expected in cases_for(pid)]
+        assert got == EXPECTED[pid], (pid, got, EXPECTED[pid])
+        # Two differing answers per problem is what defeats a hard-coded output.
+        assert len(set(got)) >= 2, (pid, "all cases share one answer", got)
     # grade() stays trailing-whitespace tolerant
     assert grade("6\n", "6")
     assert grade("3\n", "3 \n")
     assert not grade("6\n", "7\n")
     assert LANGUAGE_IDS["python"] == 71 and LANGUAGE_IDS["javascript"] == 63
-    print(f"ok — {len(TESTS)} graders verified")
+    cases = sum(len(t["stdins"]) for t in TESTS.values())
+    print(f"ok — {len(TESTS)} graders, {cases} cases verified")

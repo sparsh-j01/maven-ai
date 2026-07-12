@@ -37,7 +37,7 @@ from livekit.agents import (
 from livekit import rtc
 from livekit.plugins import deepgram, google, silero
 
-from coding import LANGUAGE_IDS, TESTS, expected_for, grade, run_on_judge0
+from coding import LANGUAGE_IDS, TESTS, cases_for, grade, run_on_judge0
 from plan_walker import PlanWalker
 from prompt_context import context_block, keyterms
 from telemetry import setup_langfuse
@@ -382,20 +382,27 @@ class InterviewAgent(Agent):
             return {"ok": False, "error": "run limit reached for this interview"}
         self._runs += 1
 
-        test = TESTS[self._coding_id]
-        expected = expected_for(self._coding_id)
-        try:
-            result = await run_on_judge0(language, code, test["stdin"])
-        except Exception:
-            logger.exception("judge0 run failed")
-            return {"ok": False, "error": "sandbox unavailable"}
-
-        stdout = result.get("stdout") or ""
-        stderr = (result.get("stderr") or "") + (result.get("compile_output") or "")
-        status = (result.get("status") or {}).get("description", "")
-        # Grade from the captured stdout ourselves so the verdict is independent of
-        # Judge0's comparison mode; status is for the human-readable summary.
-        passed = grade(expected, stdout)
+        # Run every hidden case; the candidate passes only if ALL do. Short-circuit
+        # on the first failure so an iterating (still-wrong) solution stays a single
+        # Judge0 round trip — only a correct solution pays for the whole battery.
+        # ponytail: sequential wait=true submissions. Switch to Judge0 batch if the
+        # all-pass latency (one round trip per case) starts to bite.
+        stdout = stderr = status = ""
+        passed = True
+        for stdin, expected in cases_for(self._coding_id):
+            try:
+                result = await run_on_judge0(language, code, stdin)
+            except Exception:
+                logger.exception("judge0 run failed")
+                return {"ok": False, "error": "sandbox unavailable"}
+            stdout = result.get("stdout") or ""
+            stderr = (result.get("stderr") or "") + (result.get("compile_output") or "")
+            status = (result.get("status") or {}).get("description", "")
+            # Grade from the captured stdout ourselves so the verdict is independent
+            # of Judge0's comparison mode; status is for the human-readable summary.
+            if not grade(expected, stdout):
+                passed = False
+                break
         await self._persist_submission(language, code, stdout, passed)
         self._last_run = {"passed": passed, "status": status}
         logger.info("run_code passed=%s status=%s", passed, status)
