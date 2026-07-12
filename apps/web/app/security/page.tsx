@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 const A = "text-teal hover:underline";
 
 // Security overview written to what the app actually runs on (Clerk auth,
-// Stripe/Razorpay billing, Vercel hosting, Neon Postgres, Cloudflare R2, the
+// Razorpay billing, Vercel hosting, Neon Postgres, Cloudflare R2, the
 // LiveKit/Deepgram/Google voice stack). DEV NOTE: keep this honest as the stack
 // changes, and set a real security contact before public launch.
 
@@ -66,8 +66,8 @@ export default function SecurityPage() {
 
           <Section title="Payments">
             <p>
-              We never receive or store card numbers. Payments run through Stripe
-              and Razorpay, both PCI-DSS compliant, which handle card data
+              We never receive or store card numbers. Payments run through
+              Razorpay, which is PCI-DSS compliant and handles card data
               directly. We only keep your subscription status and the identifiers
               needed to manage it.
             </p>

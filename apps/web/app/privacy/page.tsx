@@ -3,7 +3,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 // Baseline privacy policy written to what the app actually does (Clerk auth,
-// résumé text/PDF, interview audio + transcripts, Stripe billing, the named
+// résumé text/PDF, interview audio + transcripts, Razorpay billing, the named
 // subprocessors). DEV NOTE: have counsel review before public launch and set a
 // real legal entity + contact addresses — the emails below are placeholders.
 
@@ -82,8 +82,8 @@ export default function PrivacyPage() {
               Only the service providers (&ldquo;subprocessors&rdquo;) that make
               Maven run — under contract, for these purposes only: authentication
               (Clerk), real-time voice and speech (LiveKit, Deepgram, Google),
-              question and scoring models (Google), payments (Stripe,
-              Razorpay), file and database storage (Cloudflare, Neon), and
+              question and scoring models (Google), payments (Razorpay),
+              file and database storage (Cloudflare, Neon), and
               error/usage monitoring (Sentry, PostHog, Langfuse). We do not sell
               personal data or share it for advertising.
             </p>

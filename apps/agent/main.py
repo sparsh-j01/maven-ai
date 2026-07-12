@@ -38,6 +38,7 @@ from livekit import rtc
 from livekit.plugins import deepgram, google, silero
 
 from coding import LANGUAGE_IDS, TESTS, cases_for, grade, run_on_judge0
+from models import AGENT_LLM_MODEL, STT_MODEL, TTS_MODEL
 from plan_walker import PlanWalker
 from prompt_context import context_block, keyterms
 from telemetry import setup_langfuse
@@ -87,7 +88,7 @@ def _make_session(keyterms: Optional[list[str]] = None) -> AgentSession:
         # English locale. India-first product (§billing), and en-US mangles
         # Indian-accented names and technical terms. Swap to "multi" if you need
         # US/UK accents equally well, or make it per-interview.
-        "model": "nova-3",
+        "model": STT_MODEL,
         "language": "en-IN",
     }
     # Keyterm prompting: boost the candidate's name + the tools on their resume so
@@ -100,8 +101,8 @@ def _make_session(keyterms: Optional[list[str]] = None) -> AgentSession:
         # commit_user_turn on mic release). A VAD here re-introduces silence-based
         # endpointing that ends the turn ~2s into a thinking pause — the bug.
         stt=deepgram.STT(**stt_kwargs),
-        llm=google.LLM(model="gemini-2.5-flash"),
-        tts=deepgram.TTS(model="aura-asteria-en"),
+        llm=google.LLM(model=AGENT_LLM_MODEL),
+        tts=deepgram.TTS(model=TTS_MODEL),
         allow_interruptions=False,
         turn_detection="manual",
     )

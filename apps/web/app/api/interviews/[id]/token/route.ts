@@ -22,6 +22,7 @@ export async function POST(
   const [iv] = await db
     .select({
       id: interviews.id,
+      status: interviews.status,
       role: interviews.role,
       company: interviews.company,
       companyType: interviews.companyType,
@@ -34,6 +35,12 @@ export async function POST(
     .from(interviews)
     .where(and(eq(interviews.id, id), eq(interviews.userId, userId)));
   if (!iv) return new Response("Not found", { status: 404 });
+
+  // Spend gate: no LiveKit room / agent until an admin approves the request.
+  // `live` is allowed so a reconnect to an already-started session still works.
+  if (iv.status !== "approved" && iv.status !== "live") {
+    return new Response("Interview pending approval", { status: 403 });
+  }
 
   const apiKey = process.env.LIVEKIT_API_KEY;
   const apiSecret = process.env.LIVEKIT_API_SECRET;

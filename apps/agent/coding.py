@@ -492,6 +492,15 @@ async def run_on_judge0(language: str, source: str, stdin: str) -> dict:
     token = os.environ.get("JUDGE0_AUTH_TOKEN")
     if token:
         headers["X-Auth-Token"] = token  # self-hosted Judge0 auth (optional)
+    # Hosted Judge0 CE on RapidAPI (the free-tier path) authenticates with the
+    # RapidAPI headers instead; set JUDGE0_RAPIDAPI_KEY (+ host, derived from
+    # JUDGE0_URL by default) to use it. Self-host? Leave these unset.
+    rapid_key = os.environ.get("JUDGE0_RAPIDAPI_KEY")
+    if rapid_key:
+        headers["X-RapidAPI-Key"] = rapid_key
+        headers["X-RapidAPI-Host"] = os.environ.get(
+            "JUDGE0_RAPIDAPI_HOST"
+        ) or base.split("://", 1)[-1].split("/", 1)[0]
 
     payload = {
         "source_code": source,

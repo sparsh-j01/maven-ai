@@ -176,8 +176,10 @@ export default function NewInterviewPage() {
         return;
       }
       if (!res.ok) throw new Error(await res.text());
-      const { id } = (await res.json()) as { id: string };
-      router.push(`/interview/${id}`);
+      await res.json();
+      // The interview is created as `requested`; it can't start until an admin
+      // approves it, so land on the dashboard with a confirmation.
+      router.push("/dashboard?requested=1");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to start");
       setLoading(false);
@@ -203,8 +205,8 @@ export default function NewInterviewPage() {
           Set up your interview
         </h1>
         <p className="mt-3 max-w-md text-sm leading-relaxed text-fg/70">
-          Pick a role and format; we&apos;ll build a question plan, then drop you
-          into a live room. Hold the button (or Space) to talk.
+          Pick a role and format; we&apos;ll build your question plan right away.
+          The live interview starts once your request is approved.
         </p>
 
         <form
@@ -383,7 +385,7 @@ export default function NewInterviewPage() {
             className="mt-1 w-full"
             disabled={loading || role.trim().length === 0}
           >
-            {loading ? "Building your plan…" : "Start interview"}
+            {loading ? "Building your plan…" : "Request interview"}
           </Button>
           {quotaHit ? (
             <div className="rounded-lg border border-teal/25 bg-teal/[0.06] p-4">

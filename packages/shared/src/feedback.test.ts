@@ -4,6 +4,8 @@ import {
   feedbackSchemaFor,
   formatTranscript,
   type ScorerInput,
+  type ScorerTurn,
+  transcriptIsThin,
 } from "./feedback";
 import { RUBRIC_DIMENSIONS } from "./rubric";
 
@@ -56,6 +58,37 @@ describe("buildScorerPrompt", () => {
     expect(buildScorerPrompt(base, { includeStudyPlan: false })).not.toContain(
       "studyPlan",
     );
+  });
+});
+
+describe("transcriptIsThin", () => {
+  const answer = (text: string): ScorerTurn => ({ speaker: "candidate", text });
+  const ask = (text: string): ScorerTurn => ({ speaker: "interviewer", text });
+
+  it("flags too few candidate turns even when the words are long", () => {
+    // 2 turns, plenty of characters — still thin (< 3 turns).
+    const turns = [ask("q"), answer("x".repeat(300)), answer("y".repeat(300))];
+    expect(transcriptIsThin(turns)).toBe(true);
+  });
+
+  it("flags a chatty-but-empty transcript below the character floor", () => {
+    const turns = [ask("q"), answer("yes"), answer("no"), answer("maybe")];
+    expect(transcriptIsThin(turns)).toBe(true); // 4 turns but < 200 chars
+  });
+
+  it("does not flag a substantial transcript", () => {
+    const turns = [
+      ask("Tell me about hash maps."),
+      answer("A hash map gives average O(1) lookups by hashing the key. ".repeat(3)),
+      answer("Collisions are handled with chaining or open addressing. ".repeat(2)),
+      answer("You lose ordering, and worst case degrades to O(n). ".repeat(2)),
+    ];
+    expect(transcriptIsThin(turns)).toBe(false);
+  });
+
+  it("ignores interviewer verbosity — only candidate speech counts", () => {
+    const turns = [ask("x".repeat(1000)), answer("short")];
+    expect(transcriptIsThin(turns)).toBe(true);
   });
 });
 

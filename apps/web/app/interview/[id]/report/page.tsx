@@ -110,8 +110,14 @@ export default async function ReportPage({
     .orderBy(asc(codeSubmissions.createdAt));
   const lastSubmission = submissions.at(-1);
 
-  // Not finished yet: send the user back to the room, not an empty report.
-  if (iv.status === "provisioning" || iv.status === "live") {
+  // Not finished (or not started) yet: send the user back, not to an empty report.
+  const NOT_SCORED = new Set([
+    "requested",
+    "approved",
+    "provisioning",
+    "live",
+  ]);
+  if (NOT_SCORED.has(iv.status)) {
     return (
       <Shell role={iv.role} sub={subtitle(iv)}>
         <Card className="text-center">

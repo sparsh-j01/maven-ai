@@ -25,6 +25,10 @@ export async function POST(req: Request) {
 
   const db = getDb();
 
+  // Idempotent upserts (onConflictDoUpdate); we assume Razorpay delivers these in
+  // order — a stray late "charged" after a "cancelled" could re-activate, but the
+  // next billing cycle self-corrects and this is test-mode volume. stripeSubId
+  // holds the Razorpay subscription id (generic gateway id; see schema comment).
   switch (event.event) {
     case "subscription.activated":
     case "subscription.charged":

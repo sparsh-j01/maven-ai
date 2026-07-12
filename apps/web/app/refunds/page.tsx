@@ -98,8 +98,8 @@ export default function RefundsPage() {
           <Section title="How refunds are issued">
             <p>
               Approved refunds go back to your original payment method through our
-              processor (Razorpay in India, Stripe elsewhere). It usually takes
-              5–10 business days for the amount to appear, depending on your bank.
+              processor (Razorpay). It usually takes 5–10 business days for the
+              amount to appear, depending on your bank.
             </p>
           </Section>
 

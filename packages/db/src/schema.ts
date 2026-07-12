@@ -144,7 +144,8 @@ export const feedbackReports = pgTable("feedback_reports", {
   createdAt: ts("created_at").defaultNow(),
 });
 
-// Stripe billing mirror.
+// Billing mirror. Column names kept as `stripe*` for history, but they now hold
+// generic gateway ids (Razorpay subscription id in stripeSubId; customer id unused).
 export const subscriptions = pgTable("subscriptions", {
   userId: text("user_id")
     .primaryKey()

@@ -11,19 +11,21 @@ import {
   feedbackReport,
   feedbackSchemaFor,
   SCORER_SYSTEM,
+  transcriptIsThin,
   type FeedbackReport,
   type InterviewType,
   type ScorerInput,
   type Seniority,
   type Speaker,
 } from "@maven-ai/shared";
+import { MODELS, SCORER_TEMPERATURE } from "@maven-ai/shared/models";
 import { asc, eq } from "drizzle-orm";
 import { inngest } from "./inngest";
 
-// Flash, not Pro: gemini-2.5-pro is paid-tier only (free tier = 0 quota) and
-// would 429 every report. Flip to gemini-2.5-pro once Google billing is enabled —
-// run `pnpm eval` first to confirm it grades before you ship that change.
-const MODEL = "gemini-2.5-flash";
+// Model + temperature come from the shared config so this and the eval grader
+// can't drift (swap via SCORER_MODEL, then `pnpm eval`). Default is flash, not
+// Pro: gemini-2.5-pro is paid-tier only (free tier = 0 quota) and would 429.
+const MODEL = MODELS.scorer;
 const TIMEOUT_MS = 30_000;
 
 type Loaded = { hasReport: boolean; isPro: boolean; input: ScorerInput };
@@ -101,7 +103,7 @@ async function gradeWithGemini(
       { parts: [{ text: buildScorerPrompt(input, { includeStudyPlan }) }] },
     ],
     generationConfig: {
-      temperature: 0.2,
+      temperature: SCORER_TEMPERATURE,
       responseMimeType: "application/json",
       responseSchema: feedbackSchemaFor(includeStudyPlan),
     },
@@ -132,6 +134,12 @@ async function gradeWithGemini(
   // zod is the real gate — a malformed or out-of-range score can't reach the DB.
   return feedbackReport.parse(JSON.parse(text));
 }
+
+// Below a floor of real candidate speech, flag the report so the score isn't read
+// as trustworthy (checklist 4.3). transcriptIsThin lives in shared (tested there).
+const LOW_QUALITY_CAVEAT =
+  "⚠ Transcript quality low — this interview was very short or hard to " +
+  "transcribe, so the score below may be unreliable. ";
 
 async function writeReport(
   interviewId: string,
@@ -195,8 +203,11 @@ export const scoreInterview = inngest.createFunction(
     const report = await step.run("grade", () =>
       gradeWithGemini(loaded.input, loaded.isPro),
     );
-    await step.run("persist", () => writeReport(interviewId, report));
-    return { ok: true, overallScore: report.overallScore };
+    const finalReport = transcriptIsThin(loaded.input.transcript)
+      ? { ...report, summary: LOW_QUALITY_CAVEAT + report.summary }
+      : report;
+    await step.run("persist", () => writeReport(interviewId, finalReport));
+    return { ok: true, overallScore: finalReport.overallScore };
   },
 );
 

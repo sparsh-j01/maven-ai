@@ -28,3 +28,33 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      # A build-only break (a bad import, a server/client boundary slip) passes
+      # lint+typecheck+test but can't ship — so gate it here too. next build
+      # prerenders static pages, which need a resolvable .env (the apps/web/.env
+      # symlink points at repo-root .env) and a Clerk publishable key. These are
+      # build-time-only, non-secret dummies — no real auth happens during a build.
+      - name: Build web
+        run: |
+          printf 'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk\nCLERK_SECRET_KEY=sk_test_ci\n' > .env
+          pnpm --filter @maven-ai/web build
+
+  # The Python grader is the other half of coding-round correctness and was
+  # ungated. These modules are stdlib-only at import, so we skip the heavy voice
+  # stack and just run the graders + their contract tests.
+  agent:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/agent
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install pytest
+
+      # Every reference solver matches its hand-computed answers (72 cases).
+      - run: python coding.py
+      - run: python -m pytest -q

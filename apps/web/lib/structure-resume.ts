@@ -1,7 +1,9 @@
 // One Gemini call that structures résumé text into a profile. Best-effort: any failure
 // returns null. The résumé is untrusted data and labelled as such in the prompt.
 
-const MODEL = "gemini-2.5-flash";
+import { MODELS } from "@maven-ai/shared/models";
+
+const MODEL = MODELS.resume;
 const TIMEOUT_MS = 8000;
 
 export type ResumeStructured = {

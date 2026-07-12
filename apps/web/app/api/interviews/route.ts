@@ -111,7 +111,10 @@ export async function POST(req: Request) {
       type,
       resumeText: resumeText || null,
       jdText: jdText || null,
-      status: "provisioning",
+      // Spend gate: the candidate can set up + generate a plan for free, but the
+      // interview waits in `requested` until an admin approves it — only then can
+      // /token mint a LiveKit token and start the (costly) live voice session.
+      status: "requested",
       planJson: plan,
       currentPhase: "intro",
     })

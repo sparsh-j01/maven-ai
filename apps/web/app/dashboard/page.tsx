@@ -19,6 +19,8 @@ const hrefFor = (iv: { id: string; status: string }) =>
     : `/interview/${iv.id}`;
 
 const STATUS_DOT: Record<string, string> = {
+  requested: "bg-amber",
+  approved: "bg-teal",
   live: "bg-teal",
   provisioning: "bg-teal",
   processing: "bg-amber animate-pulse",
@@ -26,12 +28,18 @@ const STATUS_DOT: Record<string, string> = {
 };
 
 const STATUS_LABEL: Record<string, string> = {
+  requested: "Pending approval",
+  approved: "Ready to start",
   live: "Live",
   provisioning: "Starting",
   processing: "Scoring",
   failed: "Failed",
   ready: "Ready",
 };
+
+// A `requested` interview has no room yet (the /token gate 403s until approved),
+// so its row isn't a link — everything else routes to its report or live room.
+const isClickable = (status: string) => status !== "requested";
 
 const fmtDate = (d: Date) =>
   d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -86,10 +94,10 @@ async function getPlan(userId: string): Promise<string> {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ upgraded?: string }>;
+  searchParams: Promise<{ upgraded?: string; requested?: string }>;
 }) {
   const { userId } = await auth();
-  const { upgraded } = await searchParams;
+  const { upgraded, requested } = await searchParams;
   const rows = userId ? await listInterviews(userId) : [];
   const plan = userId ? await getPlan(userId) : "free";
   // Just back from checkout: the webhook may lag, so trust the redirect and show Pro.
@@ -137,6 +145,16 @@ export default async function DashboardPage({
         </Card>
       ) : null}
 
+      {requested === "1" ? (
+        <Card className="mt-6 flex items-center gap-3 py-4">
+          <span className="h-2 w-2 shrink-0 rounded-full bg-amber" aria-hidden />
+          <p className="text-sm text-fg/80">
+            Request submitted — your plan is ready. You can start the interview
+            once it&apos;s approved.
+          </p>
+        </Card>
+      ) : null}
+
       <div className="mt-10 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="font-mono text-xs uppercase tracking-widest text-fg/50">
@@ -146,8 +164,8 @@ export default async function DashboardPage({
             Your interviews
           </h1>
         </div>
-        {/* At the free cap, the primary CTA goes straight to checkout
-            (Razorpay/Stripe) instead of a setup form the API would 402. */}
+        {/* At the free cap, the primary CTA goes straight to Razorpay checkout
+            instead of a setup form the API would 402. */}
         {atLimit && !isPro ? (
           <UpgradeButton />
         ) : (
@@ -258,35 +276,48 @@ export default async function DashboardPage({
           </div>
 
           <Card className="mt-5 divide-y divide-fg/10 p-0">
-            {rows.map((iv) => (
-              <Link
-                key={iv.id}
-                href={hrefFor(iv)}
-                className="flex items-center justify-between gap-4 px-6 py-4 transition-colors hover:bg-fg/[0.03]"
-              >
-                <div className="min-w-0">
-                  <p className="truncate font-medium">{iv.role}</p>
-                  <p className="mt-0.5 font-mono text-xs uppercase tracking-wide text-fg/50">
-                    {fmtSeniority(iv.seniority)} · {iv.type.replace(/_/g, " ")}
-                    {iv.company ? ` · ${iv.company}` : ""}
-                    {iv.createdAt ? ` · ${fmtDate(iv.createdAt)}` : ""}
-                  </p>
+            {rows.map((iv) => {
+              const rowClass =
+                "flex items-center justify-between gap-4 px-6 py-4";
+              const inner = (
+                <>
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{iv.role}</p>
+                    <p className="mt-0.5 font-mono text-xs uppercase tracking-wide text-fg/50">
+                      {fmtSeniority(iv.seniority)} · {iv.type.replace(/_/g, " ")}
+                      {iv.company ? ` · ${iv.company}` : ""}
+                      {iv.createdAt ? ` · ${fmtDate(iv.createdAt)}` : ""}
+                    </p>
+                  </div>
+                  {iv.status === "ready" && iv.overallScore != null ? (
+                    <span className="shrink-0 font-mono text-lg font-semibold text-accent">
+                      {Math.round(Number(iv.overallScore))}
+                      <span className="text-xs font-normal text-fg/40">/100</span>
+                    </span>
+                  ) : (
+                    <span className="flex shrink-0 items-center gap-2 font-mono text-xs uppercase tracking-wide text-fg/60">
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[iv.status] ?? "bg-fg/30"}`}
+                      />
+                      {STATUS_LABEL[iv.status] ?? iv.status}
+                    </span>
+                  )}
+                </>
+              );
+              return isClickable(iv.status) ? (
+                <Link
+                  key={iv.id}
+                  href={hrefFor(iv)}
+                  className={`${rowClass} transition-colors hover:bg-fg/[0.03]`}
+                >
+                  {inner}
+                </Link>
+              ) : (
+                <div key={iv.id} className={rowClass}>
+                  {inner}
                 </div>
-                {iv.status === "ready" && iv.overallScore != null ? (
-                  <span className="shrink-0 font-mono text-lg font-semibold text-accent">
-                    {Math.round(Number(iv.overallScore))}
-                    <span className="text-xs font-normal text-fg/40">/100</span>
-                  </span>
-                ) : (
-                  <span className="flex shrink-0 items-center gap-2 font-mono text-xs uppercase tracking-wide text-fg/60">
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[iv.status] ?? "bg-fg/30"}`}
-                    />
-                    {STATUS_LABEL[iv.status] ?? iv.status}
-                  </span>
-                )}
-              </Link>
-            ))}
+              );
+            })}
           </Card>
         </>
       )}

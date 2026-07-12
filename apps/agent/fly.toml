@@ -1,0 +1,27 @@
+# Fly.io config for the Maven voice agent (architecture §10).
+#
+# This is a long-lived worker with NO inbound HTTP: it dials out to LiveKit and
+# picks up each interview room. So it must stay running — there's no request to
+# wake it, hence no [http_service] and no scale-to-zero.
+#
+# First deploy (from apps/agent):
+#   fly launch --no-deploy --copy-config --name maven-agent
+#   fly secrets set LIVEKIT_URL=... LIVEKIT_API_KEY=... LIVEKIT_API_SECRET=... \
+#                   DEEPGRAM_API_KEY=... GOOGLE_API_KEY=... DATABASE_URL=... \
+#                   JUDGE0_URL=... JUDGE0_RAPIDAPI_KEY=...
+#   fly deploy
+# Model overrides (AGENT_LLM_MODEL / STT_MODEL / TTS_MODEL) are also `fly secrets`.
+
+app = "maven-agent"
+primary_region = "bom"  # Mumbai — India-first; keep it near your LiveKit region
+
+[build]
+  dockerfile = "Dockerfile"
+
+[processes]
+  app = "python main.py start"
+
+# One always-on machine. No auto-stop (that's an http_service feature we don't use).
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
