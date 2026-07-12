@@ -40,3 +40,6 @@ venv/
 .gstack/
 .design-explorations
 design-explorations/
+
+# ── browser automation artifacts (Playwright MCP / screenshots) ──
+.playwright-mcp/
