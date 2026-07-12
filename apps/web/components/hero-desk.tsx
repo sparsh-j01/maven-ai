@@ -50,20 +50,21 @@ export function HeroDesk() {
           .to(".hd-byline", { opacity: 1, y: 0, duration: 0.6 }, "-=0.5")
           .to(".hd-file", { opacity: 1, y: 0, duration: 0.85 }, "-=0.75");
 
-        // Score count-up + rubric bars, timed to the file settling in.
+        // Score count-up + rubric bars, started with the file reveal so the
+        // number is already climbing as the case file settles — no lingering 0.
         const scoreEl = root.current?.querySelector<HTMLElement>("[data-score]");
         const counter = { v: 0 };
         tl.to(
           counter,
           {
             v: 74,
-            duration: 1.1,
+            duration: 0.9,
             ease: "power2.out",
             onUpdate: () => {
               if (scoreEl) scoreEl.textContent = String(Math.round(counter.v));
             },
           },
-          "-=0.3",
+          "-=0.85",
         );
         RUBRIC.forEach((r, i) => {
           tl.to(`.hd-bar[data-i="${i}"]`, { width: r.w, duration: 0.9, ease: "power2.out" }, "-=0.85");

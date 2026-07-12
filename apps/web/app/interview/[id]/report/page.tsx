@@ -31,9 +31,6 @@ const fmtTime = (ms: number) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 };
 
-const scoreColor = (n: number) =>
-  n >= 70 ? "text-teal" : n >= 40 ? "text-amber" : "text-danger";
-
 // The readiness verdict shown alongside the 0–100 score.
 const readinessBand = (n: number) =>
   n >= 80
@@ -138,24 +135,20 @@ export default async function ReportPage({
   return (
     <Shell role={iv.role} sub={subtitle(iv)}>
       {ready && overall != null ? (
-        <Card className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-8">
-          <div className="shrink-0">
-            <p className="font-mono text-[11px] uppercase tracking-widest text-fg/50">
-              Interview readiness
+        <Card className="flex flex-col gap-5 sm:flex-row sm:items-stretch sm:gap-8">
+          <div className="shrink-0 sm:border-r sm:border-hair sm:pr-8">
+            <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg/45">
+              Assessment · Readiness
             </p>
-            <div className="mt-1 flex items-baseline gap-1">
-              <span
-                className={`font-mono text-5xl font-semibold ${scoreColor(overall)}`}
-              >
-                {Math.round(overall)}
-              </span>
-              <span className="font-mono text-fg/40">/100</span>
+            <div className="mt-2 flex items-baseline gap-1 font-display leading-[0.9] tracking-[-0.02em]">
+              <span className="text-6xl">{Math.round(overall)}</span>
+              <span className="text-base text-muted">/100</span>
             </div>
-            <p className={`mt-1 text-sm font-medium ${scoreColor(overall)}`}>
+            <p className="mt-2 font-serif text-lg text-accent">
               {readinessBand(overall)}
             </p>
           </div>
-          <p className="font-serif text-lg leading-relaxed text-fg/80">
+          <p className="self-center font-serif text-lg leading-relaxed text-fg/80">
             {report.summary}
           </p>
         </Card>
@@ -188,7 +181,7 @@ export default async function ReportPage({
 
       {ready && (report.strengths?.length || report.gaps?.length) ? (
         <div className="grid gap-4 sm:grid-cols-2">
-          <Bullets title="Strengths" items={report.strengths} accent="teal" />
+          <Bullets title="Strengths" items={report.strengths} accent="accent" />
           <Bullets title="What to work on" items={report.gaps} accent="amber" />
         </div>
       ) : null}
@@ -200,8 +193,13 @@ export default async function ReportPage({
           </h2>
           {report.modelAnswers.map((m, i) => (
             <Card key={i}>
-              <p className="text-sm font-medium text-fg">{m.question}</p>
-              <p className="mt-3 rounded bg-fg/[0.03] p-4 font-serif text-lg leading-relaxed text-fg/80">
+              <div className="flex items-start justify-between gap-4">
+                <p className="font-medium text-fg">{m.question}</p>
+                <span className="shrink-0 pt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-fg/40">
+                  № {String(i + 1).padStart(2, "0")}
+                </span>
+              </div>
+              <p className="mt-3 rounded-r border-l-2 border-accent bg-fg/[0.03] py-3 pl-4 pr-4 font-serif text-lg leading-relaxed text-fg/80">
                 {m.whatGreatLooksLike}
               </p>
             </Card>
@@ -274,7 +272,7 @@ export default async function ReportPage({
               <span
                 className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                   lastSubmission.execPassed
-                    ? "bg-teal/10 text-teal"
+                    ? "bg-accent/10 text-accent"
                     : "bg-amber/10 text-amber"
                 }`}
               >
@@ -317,7 +315,7 @@ export default async function ReportPage({
                 <div>
                   <span
                     className={`font-mono text-xs uppercase tracking-widest ${
-                      t.speaker === "candidate" ? "text-teal" : "text-fg/40"
+                      t.speaker === "candidate" ? "text-accent" : "text-fg/40"
                     }`}
                   >
                     {t.speaker === "candidate" ? "You" : "Interviewer"}
@@ -416,7 +414,7 @@ function RubricBars({ scores }: { scores: RubricScores }) {
             </div>
             <div className="mt-1 h-1.5 w-full rounded-full bg-fg/10">
               <div
-                className="h-full rounded-full bg-teal"
+                className="h-full rounded-full bg-accent"
                 style={{ width: `${(Math.min(Math.max(v, 0), 10) / 10) * 100}%` }}
               />
             </div>
@@ -434,7 +432,7 @@ function Bullets({
 }: {
   title: string;
   items: string[] | null;
-  accent: "teal" | "amber";
+  accent: "accent" | "amber";
 }) {
   if (!items?.length) return null;
   return (
@@ -445,7 +443,7 @@ function Bullets({
           <li key={i} className="flex gap-2 text-sm text-fg/80">
             <span
               className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${
-                accent === "teal" ? "bg-teal" : "bg-amber"
+                accent === "accent" ? "bg-accent" : "bg-amber"
               }`}
             />
             {it}

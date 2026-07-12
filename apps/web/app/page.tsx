@@ -315,10 +315,10 @@ export default async function LandingPage() {
           </div>
 
           <p className="mt-5 flex flex-wrap items-center gap-x-2 text-sm text-muted">
-            <Check className="h-4 w-4 shrink-0 text-teal" aria-hidden />
+            <Check className="h-4 w-4 shrink-0 text-accent" aria-hidden />
             <span className="font-medium text-fg">7-day money-back guarantee.</span>
             Cancel anytime — see our{" "}
-            <Link href="/refunds" className="text-teal underline-offset-4 hover:underline">
+            <Link href="/refunds" className="text-accent underline-offset-4 hover:underline">
               Cancellation &amp; Refunds
             </Link>{" "}
             policy.

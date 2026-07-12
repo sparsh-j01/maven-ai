@@ -47,7 +47,7 @@ export function HowItWorks() {
           <li key={id} className="glass flex flex-col gap-4 rounded-card p-7">
             <div className="flex items-center justify-between">
               <span className="font-mono text-sm text-accent">{id}</span>
-              <span className="flex h-10 w-10 items-center justify-center rounded-full border border-fg/10 bg-fg/5 text-teal">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full border border-hair text-accent">
                 <Icon className="h-5 w-5" aria-hidden />
               </span>
             </div>

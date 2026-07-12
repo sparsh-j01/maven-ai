@@ -130,7 +130,7 @@ export default async function DashboardPage({
 
       {upgraded === "1" ? (
         <Card className="mt-6 flex items-center gap-3 py-4">
-          <span className="h-2 w-2 shrink-0 rounded-full bg-teal" aria-hidden />
+          <span className="h-2 w-2 shrink-0 rounded-full bg-accent" aria-hidden />
           <p className="text-sm text-fg/80">
             You&apos;re on Pro — unlimited interviews from here.
           </p>
@@ -200,7 +200,7 @@ export default async function DashboardPage({
               </div>
               <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-fg/10">
                 <div
-                  className={`h-full rounded-full transition-all ${atLimit && !unlimited ? "bg-accent" : "bg-teal"}`}
+                  className={`h-full rounded-full transition-all ${atLimit && !unlimited ? "bg-amber" : "bg-accent"}`}
                   style={{ width: unlimited ? "100%" : `${usagePct}%` }}
                 />
               </div>
@@ -220,7 +220,7 @@ export default async function DashboardPage({
               {trend.length >= 2 && latestScore != null ? (
                 <>
                   <div className="mt-3 flex items-baseline gap-2">
-                    <span className="font-display font-medium text-4xl tracking-tight text-teal">
+                    <span className="font-display font-medium text-4xl tracking-tight text-accent">
                       {latestScore}
                     </span>
                     <span className="text-sm text-fg/50">/ 100 latest</span>
@@ -240,7 +240,7 @@ export default async function DashboardPage({
                         )
                         .join(" ")}
                       fill="none"
-                      className="stroke-teal"
+                      className="stroke-accent"
                       strokeWidth={2}
                       strokeLinejoin="round"
                       strokeLinecap="round"
@@ -273,7 +273,7 @@ export default async function DashboardPage({
                   </p>
                 </div>
                 {iv.status === "ready" && iv.overallScore != null ? (
-                  <span className="shrink-0 font-mono text-lg font-semibold text-teal">
+                  <span className="shrink-0 font-mono text-lg font-semibold text-accent">
                     {Math.round(Number(iv.overallScore))}
                     <span className="text-xs font-normal text-fg/40">/100</span>
                   </span>
