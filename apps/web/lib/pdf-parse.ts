@@ -8,7 +8,7 @@ import { Worker } from "node:worker_threads";
 const WORKER_PATH = path.join(process.cwd(), "lib", "pdf-worker.mjs");
 const PARSE_TIMEOUT_MS = 5000;
 export const MAX_PAGES = 30; // a résumé is 1–3 pages
-export const MAX_CHARS = 10000; // matches createInput.resumeText in /api/interviews
+const MAX_CHARS = 10000; // matches createInput.resumeText in /api/interviews
 
 export type PdfParseResult =
   | { ok: true; text: string }

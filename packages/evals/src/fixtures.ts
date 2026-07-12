@@ -124,6 +124,7 @@ export const CASES = [
 // Production scored this 15/100 — punishing the candidate for a transcription
 // failure, not a bad answer. Kept here (NOT in CASES) until the grader gets a
 // `gradeable` flag; that ships with the STT work, and this becomes a real test.
+/** @public — deliberately parked (see above), not dead code. */
 export const GARBLED_STT_CASE = {
   name: "garbled-stt-transcript",
   input: {

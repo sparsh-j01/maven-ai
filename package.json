@@ -12,12 +12,14 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "knip": "knip",
     "eval": "pnpm --filter @maven-ai/evals eval",
     "db:generate": "pnpm --filter @maven-ai/db generate",
     "db:migrate": "pnpm --filter @maven-ai/db migrate",
     "db:push": "pnpm --filter @maven-ai/db push"
   },
   "devDependencies": {
+    "knip": "^6.26.0",
     "turbo": "^2.3.3",
     "typescript": "^5.7.2"
   }

@@ -1,6 +1,6 @@
 import { Check } from "lucide-react";
 
-export type TierType = {
+type TierType = {
   name: string;
   priceMonthly: string;
   priceAnnual: string;

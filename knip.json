@@ -1,0 +1,17 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    "apps/web": {
+      "entry": [
+        "lib/pdf-worker.mjs",
+        "lib/parse-resume.check.mjs"
+      ]
+    }
+  },
+  "ignoreDependencies": [
+    "shadcn"
+  ],
+  "ignoreBinaries": [
+    "cupsfilter"
+  ]
+}
