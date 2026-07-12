@@ -3,11 +3,12 @@
 import { SignedIn, SignedOut, SignUpButton } from "@clerk/nextjs";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import Link from "next/link";
 import { useRef } from "react";
 import { buttonVariants } from "@/components/ui/button";
 
-gsap.registerPlugin(useGSAP);
+gsap.registerPlugin(useGSAP, ScrollTrigger);
 
 // The editorial hero: an asymmetric masthead layout whose right column is a
 // "case file" — a typeset transcript excerpt that resolves into an auto-graded
@@ -34,6 +35,7 @@ export function HeroDesk() {
         gsap.set(".hd-file", { opacity: 0, y: 16 });
         gsap.set(".hd-bar", { width: 0 });
         gsap.set(".hd-stamp", { opacity: 0, scale: 1.6, rotate: -9 });
+        gsap.set(".hd-underline", { scaleX: 0, transformOrigin: "left" });
         // Score starts at 0 for the count-up (its rendered default is the final
         // value, so reduced-motion users see 74 with no animation).
         const scoreStart = root.current?.querySelector<HTMLElement>("[data-score]");
@@ -42,7 +44,8 @@ export function HeroDesk() {
         const tl = gsap.timeline({ defaults: { ease: "power4.out" } });
         tl.to(".hd-rule", { scaleX: 1, duration: 0.6, ease: "power2.out" })
           .to(".hd-line > span", { yPercent: 0, duration: 0.95, stagger: 0.09 }, "-=0.35")
-          .to(".hd-lede", { opacity: 1, y: 0, duration: 0.7 }, "-=0.5")
+          .to(".hd-underline", { scaleX: 1, duration: 0.5, ease: "power2.out" }, "-=0.15")
+          .to(".hd-lede", { opacity: 1, y: 0, duration: 0.7 }, "-=0.55")
           .to(".hd-cta", { opacity: 1, y: 0, duration: 0.7 }, "-=0.55")
           .to(".hd-byline", { opacity: 1, y: 0, duration: 0.6 }, "-=0.5")
           .to(".hd-file", { opacity: 1, y: 0, duration: 0.85 }, "-=0.75");
@@ -66,6 +69,41 @@ export function HeroDesk() {
           tl.to(`.hd-bar[data-i="${i}"]`, { width: r.w, duration: 0.9, ease: "power2.out" }, "-=0.85");
         });
         tl.to(".hd-stamp", { opacity: 1, scale: 1, rotate: -2, duration: 0.5, ease: "back.out(1.7)" }, "-=0.7");
+
+        // Subtle parallax: the case file drifts as you scroll through the hero.
+        gsap.to(".hd-file", {
+          yPercent: -7,
+          ease: "none",
+          scrollTrigger: {
+            trigger: root.current,
+            start: "top top",
+            end: "bottom top",
+            scrub: true,
+          },
+        });
+
+        // Magnetic pull on the primary CTA (listeners cleaned up on revert).
+        const cleanups: Array<() => void> = [];
+        gsap.utils.toArray<HTMLElement>(".hd-magnetic").forEach((el) => {
+          const xTo = gsap.quickTo(el, "x", { duration: 0.4, ease: "power3" });
+          const yTo = gsap.quickTo(el, "y", { duration: 0.4, ease: "power3" });
+          const move = (e: MouseEvent) => {
+            const r = el.getBoundingClientRect();
+            xTo((e.clientX - (r.left + r.width / 2)) * 0.3);
+            yTo((e.clientY - (r.top + r.height / 2)) * 0.3);
+          };
+          const leave = () => {
+            xTo(0);
+            yTo(0);
+          };
+          el.addEventListener("mousemove", move);
+          el.addEventListener("mouseleave", leave);
+          cleanups.push(() => {
+            el.removeEventListener("mousemove", move);
+            el.removeEventListener("mouseleave", leave);
+          });
+        });
+        return () => cleanups.forEach((fn) => fn());
       });
     },
     { scope: root },
@@ -85,7 +123,7 @@ export function HeroDesk() {
           </p>
           <h1 className="font-display text-[clamp(2.75rem,6.4vw,5rem)] font-normal leading-[1.0] tracking-[-0.015em]">
             <span className="mask-line block"><span className="hd-line block"><span className="block">Sit the interview</span></span></span>
-            <span className="mask-line block"><span className="hd-line block"><span className="block"><em className="italic text-accent">before</em> the</span></span></span>
+            <span className="mask-line block"><span className="hd-line block"><span className="block"><em className="relative italic text-accent">before<span className="hd-underline absolute -bottom-0.5 left-0 h-px w-full bg-accent" /></em> the</span></span></span>
             <span className="mask-line block"><span className="hd-line block"><span className="block">interview.</span></span></span>
           </h1>
           <p className="hd-lede mt-7 max-w-[34ch] text-lg leading-relaxed text-muted">
@@ -97,13 +135,16 @@ export function HeroDesk() {
           <div className="hd-cta mt-8 flex flex-wrap items-center gap-6">
             <SignedOut>
               <SignUpButton mode="modal">
-                <button className={buttonVariants({ variant: "accent", size: "lg" })}>
+                <button className={`hd-magnetic ${buttonVariants({ variant: "accent", size: "lg" })}`}>
                   Start a free interview
                 </button>
               </SignUpButton>
             </SignedOut>
             <SignedIn>
-              <Link href="/interview/new" className={buttonVariants({ variant: "accent", size: "lg" })}>
+              <Link
+                href="/interview/new"
+                className={`hd-magnetic ${buttonVariants({ variant: "accent", size: "lg" })}`}
+              >
                 Start a new interview
               </Link>
             </SignedIn>

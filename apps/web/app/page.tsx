@@ -287,11 +287,9 @@ export default async function LandingPage() {
         </div>
 
         <ScrollReveals />
-        <div data-reveal>
-          <HowItWorks />
-        </div>
+        <HowItWorks />
 
-        <section id="pricing" data-reveal className="mt-28 scroll-mt-10">
+        <section id="pricing" className="mt-28 scroll-mt-10">
           <p className="font-mono text-xs uppercase tracking-widest text-muted">
             Pricing
           </p>

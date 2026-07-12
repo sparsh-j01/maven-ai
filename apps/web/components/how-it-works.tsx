@@ -30,7 +30,10 @@ export function HowItWorks() {
       <p className="font-mono text-xs uppercase tracking-widest text-muted">
         How it works
       </p>
-      <div className="mt-6 flex flex-wrap items-end justify-between gap-4 border-t border-fg/10 pt-10">
+      <div
+        data-reveal
+        className="mt-6 flex flex-wrap items-end justify-between gap-4 border-t border-hair pt-10"
+      >
         <h2 className="max-w-md font-display text-3xl font-medium tracking-tight">
           Three steps. About ten minutes.
         </h2>
@@ -39,7 +42,7 @@ export function HowItWorks() {
         </p>
       </div>
 
-      <ol className="mt-10 grid gap-5 md:grid-cols-3">
+      <ol data-reveal-group className="mt-10 grid gap-5 md:grid-cols-3">
         {STEPS.map(({ id, icon: Icon, title, description }) => (
           <li key={id} className="glass flex flex-col gap-4 rounded-card p-7">
             <div className="flex items-center justify-between">

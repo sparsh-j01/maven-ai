@@ -22,6 +22,17 @@ export function ScrollReveals() {
           scrollTrigger: { trigger: el, start: "top 85%", once: true },
         });
       });
+      // Groups: stagger the direct children in as the container scrolls in.
+      gsap.utils.toArray<HTMLElement>("[data-reveal-group]").forEach((group) => {
+        gsap.from(Array.from(group.children), {
+          opacity: 0,
+          y: 26,
+          duration: 0.65,
+          ease: "power3.out",
+          stagger: 0.1,
+          scrollTrigger: { trigger: group, start: "top 80%", once: true },
+        });
+      });
     });
   });
   return null;
