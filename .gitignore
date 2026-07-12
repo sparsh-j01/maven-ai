@@ -5,6 +5,7 @@
 /docs
 .claude/
 /simplify.md
+/maven-ai-bug-checklist.md
 
 # ── env / secrets ──────────────────────────────────────────────
 .env
