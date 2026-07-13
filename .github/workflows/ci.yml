@@ -35,12 +35,14 @@ jobs:
       - run: pnpm test
       # A build-only break (a bad import, a server/client boundary slip) passes
       # lint+typecheck+test but can't ship — so gate it here too. next build
-      # prerenders static pages, which need a resolvable .env (the apps/web/.env
-      # symlink points at repo-root .env) and a Clerk publishable key. These are
-      # build-time-only, non-secret dummies — no real auth happens during a build.
+      # prerenders static pages, which need a Clerk publishable key to be resolvable.
+      # Write it to apps/web/.env, which is where Next actually looks: locally that
+      # path is a symlink to the repo-root .env, but the symlink is gitignored and so
+      # doesn't exist on a fresh checkout — a root .env here would never be read.
+      # Build-time-only, non-secret dummies; no real auth happens during a build.
       - name: Build web
         run: |
-          printf 'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk\nCLERK_SECRET_KEY=sk_test_ci\n' > .env
+          printf 'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk\nCLERK_SECRET_KEY=sk_test_ci\n' > apps/web/.env
           pnpm --filter @maven-ai/web build
 
   # The Python grader is the other half of coding-round correctness and was
