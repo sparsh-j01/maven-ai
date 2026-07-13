@@ -1,12 +1,19 @@
 import { UserButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
-import { feedbackReports, getDb, interviews, users } from "@maven-ai/db";
+import {
+  feedbackReports,
+  getDb,
+  interviews,
+  subscriptions,
+  users,
+} from "@maven-ai/db";
 import { monthStart, PLAN_LIMITS } from "@maven-ai/shared";
 import { desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { TopBar } from "@/components/top-bar";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { CancelButton } from "@/components/cancel-button";
 import { UpgradeButton } from "@/components/upgrade-button";
 import { STATUS_DOT, STATUS_LABEL } from "@/lib/interview-status";
 
@@ -73,17 +80,32 @@ async function getPlan(userId: string): Promise<string> {
   }
 }
 
+// "cancelling" = cancel scheduled at cycle end; they're still Pro until it lapses.
+async function getSubStatus(userId: string): Promise<string | null> {
+  try {
+    const [row] = await getDb()
+      .select({ status: subscriptions.status })
+      .from(subscriptions)
+      .where(eq(subscriptions.userId, userId));
+    return row?.status ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ upgraded?: string; requested?: string }>;
+  searchParams: Promise<{ requested?: string }>;
 }) {
   const { userId } = await auth();
-  const { upgraded, requested } = await searchParams;
+  const { requested } = await searchParams;
   const rows = userId ? await listInterviews(userId) : [];
   const plan = userId ? await getPlan(userId) : "free";
-  // Just back from checkout: the webhook may lag, so trust the redirect and show Pro.
-  const isPro = plan === "pro" || upgraded === "1";
+  const subStatus = userId ? await getSubStatus(userId) : null;
+  // Plan comes from the DB only — the Razorpay webhook is what makes someone Pro.
+  const isPro = plan === "pro";
+  const cancelling = subStatus === "cancelling";
 
   const start = monthStart();
   const usedThisMonth = rows.filter(
@@ -118,16 +140,18 @@ export default async function DashboardPage({
         right={
           <>
             {!isPro && <UpgradeButton />}
+            {isPro && !cancelling && <CancelButton />}
             <UserButton />
           </>
         }
       />
 
-      {upgraded === "1" ? (
+      {cancelling ? (
         <Card className="mt-6 flex items-center gap-3 py-4">
-          <span className="h-2 w-2 shrink-0 rounded-full bg-accent" aria-hidden />
+          <span className="h-2 w-2 shrink-0 rounded-full bg-amber" aria-hidden />
           <p className="text-sm text-fg/80">
-            You&apos;re on Pro — unlimited interviews from here.
+            Your subscription is set to cancel at the end of this billing period.
+            You keep Pro until then, and won&apos;t be charged again.
           </p>
         </Card>
       ) : null}

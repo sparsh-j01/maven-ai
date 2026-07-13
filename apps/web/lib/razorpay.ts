@@ -41,6 +41,26 @@ export async function createProSubscription(
   return sub.short_url;
 }
 
+// Cancel at cycle end, not immediately: they paid for the current period, so they
+// keep Pro until it runs out. Razorpay fires subscription.cancelled when it actually
+// lapses — that webhook is what flips users.plan back to free, never this call.
+export async function cancelSubscription(subId: string): Promise<void> {
+  const res = await fetch(
+    `https://api.razorpay.com/v1/subscriptions/${subId}/cancel`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: authHeader(),
+      },
+      body: JSON.stringify({ cancel_at_cycle_end: 1 }),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Razorpay ${res.status}: ${await res.text()}`);
+  }
+}
+
 export function verifyWebhook(rawBody: string, signature: string | null): boolean {
   const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
   if (!secret || !signature) return false;
