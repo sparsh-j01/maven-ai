@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { getDb, interviews, interviewTurns } from "@maven-ai/db";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { inngest } from "@/lib/inngest";
 
 // POST /api/interviews/:id/end — the candidate ended the interview early (the
@@ -45,10 +45,28 @@ export async function POST(
     return Response.json({ status: iv.status, scored: false });
   }
 
-  await db
+  // The status check above and this write are two round-trips, so a double-click on
+  // Leave (or racing the agent's own finalize) can have both callers pass it. Put the
+  // expected status in the UPDATE itself: the DB picks one winner, and only that one
+  // fires the scorer. Without this both send interview/ended and we score — and pay —
+  // twice on the same transcript.
+  const won = await db
     .update(interviews)
     .set({ status: "processing", endedAt: sql`now()` })
-    .where(and(eq(interviews.id, id), eq(interviews.userId, userId)));
+    .where(
+      and(
+        eq(interviews.id, id),
+        eq(interviews.userId, userId),
+        inArray(interviews.status, ["live", "provisioning"]),
+      ),
+    )
+    .returning({ id: interviews.id });
+
+  if (won.length === 0) {
+    // Someone else finalized between our read and our write.
+    return Response.json({ status: "processing", scored: true });
+  }
+
   await inngest.send({ name: "interview/ended", data: { interviewId: id } });
   return Response.json({ status: "processing", scored: true });
 }
