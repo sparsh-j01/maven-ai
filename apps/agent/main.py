@@ -261,12 +261,15 @@ class InterviewAgent(Agent):
         Best-effort: a DB blip must never interrupt the live interview."""
         if not self._db:
             return
-        now = int(time.monotonic() * 1000 - self._start_ms)
-        start = self._last_offset
-        end = now if now > start else start
-        self._last_offset = end
         try:
             async with self._db_lock:
+                # Under the lock: start/end are derived from _last_offset, so two
+                # turns racing here would otherwise read the same value and write
+                # overlapping, mis-ordered ts_start_ms/ts_end_ms.
+                now = int(time.monotonic() * 1000 - self._start_ms)
+                start = self._last_offset
+                end = now if now > start else start
+                self._last_offset = end
                 await self._db.execute(
                     "INSERT INTO interview_turns "
                     "(interview_id, speaker, text, ts_start_ms, ts_end_ms, phase) "
@@ -474,8 +477,12 @@ class InterviewAgent(Agent):
     async def end_interview(self) -> str:
         """End the interview. Call this only after you have delivered the closing
         remarks and the plan is complete."""
-        if self._cap_task:
-            self._cap_task.cancel()  # plan finished before the cap — stand it down
+        # _cap_task is deliberately left running. _finalize() marks the row and tells
+        # the room, but only _enforce_time_cap closes the session and deletes the
+        # room — so if we cancelled the cap here and the client never disconnected
+        # (crash, dropped connection), nothing would ever force closure and the
+        # documented "no matter what" ceiling would be a lie. _finalize is idempotent,
+        # so leaving the cap armed costs nothing on the happy path.
         await self._finalize("plan complete")
         # The report is generated asynchronously: status='processing' is the
         # trigger the scorer watches for, kicked when the report page opens (§4.3).
@@ -551,6 +558,16 @@ async def entrypoint(ctx: JobContext) -> None:
     )
     session = _make_session(keyterms=keyterms(meta))
 
+    # asyncio only holds weak references to tasks, so a bare create_task() can be
+    # garbage-collected mid-flight — silently dropping a persisted turn or a code Run.
+    # Hold a strong ref until the task finishes.
+    _bg_tasks: set[asyncio.Task] = set()
+
+    def _spawn(coro) -> None:
+        task = asyncio.create_task(coro)
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
+
     # Coding round: the browser broadcasts the editor buffer and Run requests over
     # the data channel (§4.2). The buffer is display/control data, never trusted as
     # a control signal beyond what run_code re-validates server-side (F1, §8.1).
@@ -568,7 +585,7 @@ async def entrypoint(ctx: JobContext) -> None:
                 "code": msg.get("code", ""),
             }
         elif msg.get("type") == "run":
-            asyncio.create_task(agent.handle_run())
+            _spawn(agent.handle_run())
 
     # Push-to-talk turn control (§2.2): with turn_detection="manual" the session
     # waits for us to commit — so we drive it off the mic mute state the browser
@@ -612,7 +629,7 @@ async def entrypoint(ctx: JobContext) -> None:
         text = (getattr(item, "text_content", None) or "").strip()
         speaker = {"user": "candidate", "assistant": "interviewer"}.get(role)
         if speaker and text:
-            asyncio.create_task(agent.record_turn(speaker, text))
+            _spawn(agent.record_turn(speaker, text))
 
     await session.start(agent=agent, room=ctx.room)
     # Don't greet an empty room: the BFF pre-creates the room (with metadata), so
