@@ -8,6 +8,7 @@ import { TopBar } from "@/components/top-bar";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { UpgradeButton } from "@/components/upgrade-button";
+import { STATUS_DOT, STATUS_LABEL } from "@/lib/interview-status";
 
 export const dynamic = "force-dynamic";
 
@@ -17,25 +18,6 @@ const hrefFor = (iv: { id: string; status: string }) =>
   REPORT_STATUSES.has(iv.status)
     ? `/interview/${iv.id}/report`
     : `/interview/${iv.id}`;
-
-const STATUS_DOT: Record<string, string> = {
-  requested: "bg-amber",
-  approved: "bg-teal",
-  live: "bg-teal",
-  provisioning: "bg-teal",
-  processing: "bg-amber animate-pulse",
-  failed: "bg-danger",
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  requested: "Pending approval",
-  approved: "Ready to start",
-  live: "Live",
-  provisioning: "Starting",
-  processing: "Scoring",
-  failed: "Failed",
-  ready: "Ready",
-};
 
 // A `requested` interview has no room yet (the /token gate 403s until approved),
 // so its row isn't a link — everything else routes to its report or live room.
@@ -113,6 +95,11 @@ export default async function DashboardPage({
     .filter((r) => r.status === "ready" && r.overallScore != null)
     .map((r) => Number(r.overallScore))
     .reverse();
+
+  // Both stats come from the rows already loaded — no extra query. That caps them
+  // at the last 20 interviews, which the cards say out loud.
+  const completedCount = rows.filter((r) => r.status === "ready").length;
+  const bestScore = trend.length ? Math.round(Math.max(...trend)) : null;
 
   // limit mirrors the enforced plan cap (entitlements.ts).
   const limit = isPro
@@ -272,6 +259,40 @@ export default async function DashboardPage({
                   here.
                 </p>
               )}
+            </Card>
+
+            <Card>
+              <p className="font-mono text-xs uppercase tracking-widest text-fg/50">
+                Best score
+              </p>
+              <div className="mt-3 flex items-baseline gap-2">
+                <span className="font-display font-medium text-4xl tracking-tight">
+                  {bestScore ?? "—"}
+                </span>
+                <span className="text-sm text-fg/50">
+                  {bestScore == null ? "no scored interviews yet" : "/ 100"}
+                </span>
+              </div>
+              <p className="mt-3 text-xs text-fg/50">
+                Your highest across the interviews below.
+              </p>
+            </Card>
+
+            <Card>
+              <p className="font-mono text-xs uppercase tracking-widest text-fg/50">
+                Completed
+              </p>
+              <div className="mt-3 flex items-baseline gap-2">
+                <span className="font-display font-medium text-4xl tracking-tight">
+                  {completedCount}
+                </span>
+                <span className="text-sm text-fg/50">
+                  {completedCount === 1 ? "scored report" : "scored reports"}
+                </span>
+              </div>
+              <p className="mt-3 text-xs text-fg/50">
+                Interviews you finished and got graded.
+              </p>
             </Card>
           </div>
 
