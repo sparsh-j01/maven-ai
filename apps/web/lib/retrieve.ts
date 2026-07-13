@@ -14,8 +14,10 @@ import { cosineDistance, isNotNull } from "drizzle-orm";
 // It re-ranks the deterministic pool (never drops a question); returns null on any
 // failure, so personalizePlan falls back to the plain order.
 
-// Bounds a hung DB connection so retrieval fails over to the deterministic order.
+// Bounds the hung external calls (embedding provider, DB) so retrieval fails over
+// to the deterministic order instead of stalling plan generation.
 const DB_TIMEOUT_MS = 4000;
+const EMBED_TIMEOUT_MS = 6000;
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -45,7 +47,11 @@ export async function retrieveCandidates(
     const query = [`${input.seniority} ${input.role}`, resume, jd]
       .filter(Boolean)
       .join("\n\n");
-    const vec = await embedText(query);
+    const vec = await withTimeout(
+      embedText(query),
+      EMBED_TIMEOUT_MS,
+      "retrieve embed timeout",
+    );
 
     const db = getDb();
     const distance = cosineDistance(questions.embedding, vec);

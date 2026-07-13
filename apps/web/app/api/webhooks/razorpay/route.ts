@@ -10,7 +10,7 @@ export async function POST(req: Request) {
     return new Response("Invalid signature", { status: 400 });
   }
 
-  const event = JSON.parse(raw) as {
+  let event: {
     event: string;
     payload?: {
       subscription?: {
@@ -18,6 +18,12 @@ export async function POST(req: Request) {
       };
     };
   };
+  try {
+    event = JSON.parse(raw);
+  } catch {
+    // Signature was valid but the body isn't JSON — answer 400, not an uncaught 500.
+    return new Response("Invalid payload", { status: 400 });
+  }
 
   const sub = event.payload?.subscription?.entity;
   const userId = sub?.notes?.userId;

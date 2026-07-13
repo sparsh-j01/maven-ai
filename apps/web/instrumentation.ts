@@ -7,6 +7,11 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     await import("./sentry.server.config");
   }
+  // Middleware and edge routes run in a separate runtime with its own Sentry
+  // client — without this, onRequestError captures nothing for them.
+  if (process.env.NEXT_RUNTIME === "edge") {
+    await import("./sentry.edge.config");
+  }
 }
 
 export const onRequestError = Sentry.captureRequestError;

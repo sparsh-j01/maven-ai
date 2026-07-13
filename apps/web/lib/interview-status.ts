@@ -8,6 +8,7 @@ export const STATUS_DOT: Record<string, string> = {
   provisioning: "bg-teal",
   processing: "bg-amber animate-pulse",
   failed: "bg-danger",
+  ready: "bg-teal",
 };
 
 export const STATUS_LABEL: Record<string, string> = {
