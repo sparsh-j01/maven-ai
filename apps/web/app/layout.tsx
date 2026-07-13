@@ -16,10 +16,27 @@ const display = Fraunces({
 const sans = Geist({ subsets: ["latin"], variable: "--font-sans" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
+const description =
+  "Practice interviews with a real-time voice AI. Take clean turns, run a live coding round, and get a rubric-scored report.";
+
 export const metadata: Metadata = {
+  // Absolute URLs for the OG card. Vercel sets VERCEL_URL per deployment; set
+  // NEXT_PUBLIC_SITE_URL to pin the canonical domain in production.
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ??
+      (process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : "http://localhost:3000"),
+  ),
   title: "Maven",
-  description:
-    "Practice interviews with a real-time voice AI. Take clean turns, run a live coding round, and get a rubric-scored report.",
+  description,
+  openGraph: {
+    title: "Maven — mock interviews that feel real",
+    description,
+    siteName: "Maven",
+    type: "website",
+  },
+  twitter: { card: "summary_large_image", title: "Maven", description },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

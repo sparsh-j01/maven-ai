@@ -10,7 +10,7 @@ export async function POST(req: Request) {
     return new Response("Invalid signature", { status: 400 });
   }
 
-  const event = JSON.parse(raw) as {
+  let event: {
     event: string;
     payload?: {
       subscription?: {
@@ -18,6 +18,12 @@ export async function POST(req: Request) {
       };
     };
   };
+  try {
+    event = JSON.parse(raw);
+  } catch {
+    // Signature was valid but the body isn't JSON — answer 400, not an uncaught 500.
+    return new Response("Invalid payload", { status: 400 });
+  }
 
   const sub = event.payload?.subscription?.entity;
   const userId = sub?.notes?.userId;
@@ -25,6 +31,10 @@ export async function POST(req: Request) {
 
   const db = getDb();
 
+  // Idempotent upserts (onConflictDoUpdate); we assume Razorpay delivers these in
+  // order — a stray late "charged" after a "cancelled" could re-activate, but the
+  // next billing cycle self-corrects and this is test-mode volume. stripeSubId
+  // holds the Razorpay subscription id (generic gateway id; see schema comment).
   switch (event.event) {
     case "subscription.activated":
     case "subscription.charged":

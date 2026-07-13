@@ -3,6 +3,10 @@ import { getDb, interviews } from "@maven-ai/db";
 import { and, eq } from "drizzle-orm";
 import { AccessToken, RoomServiceClient, TrackSource } from "livekit-server-sdk";
 
+// Per-field ceiling on the free text we put in room metadata. LiveKit's hard cap is
+// 64 KiB for the whole blob; this keeps résumé + JD + plan comfortably under it.
+const META_TEXT_MAX = 6000;
+
 // POST /api/interviews/:id/token — mint a scoped LiveKit token for this room.
 // F1 (§8.1): pinned to the one room, identity-locked, short TTL. The grant is
 // audio-publish only (the candidate's mic for push-to-talk) plus the data
@@ -22,6 +26,7 @@ export async function POST(
   const [iv] = await db
     .select({
       id: interviews.id,
+      status: interviews.status,
       role: interviews.role,
       company: interviews.company,
       companyType: interviews.companyType,
@@ -34,6 +39,12 @@ export async function POST(
     .from(interviews)
     .where(and(eq(interviews.id, id), eq(interviews.userId, userId)));
   if (!iv) return new Response("Not found", { status: 404 });
+
+  // Spend gate: no LiveKit room / agent until an admin approves the request.
+  // `live` is allowed so a reconnect to an already-started session still works.
+  if (iv.status !== "approved" && iv.status !== "live") {
+    return new Response("Interview pending approval", { status: 403 });
+  }
 
   const apiKey = process.env.LIVEKIT_API_KEY;
   const apiSecret = process.env.LIVEKIT_API_SECRET;
@@ -55,22 +66,37 @@ export async function POST(
     apiKey,
     apiSecret,
   );
-  await svc.createRoom({
-    name: room,
-    metadata: JSON.stringify({
-      interviewId: id,
-      role: iv.role,
-      company: iv.company,
-      companyType: iv.companyType,
-      seniority: iv.seniority,
-      type: iv.type,
-      plan: iv.planJson,
-      resumeText: iv.resumeText,
-      jdText: iv.jdText,
-    }),
-    emptyTimeout: 10 * 60,
-    departureTimeout: 60,
-  });
+
+  // LiveKit caps room metadata at 64 KiB. A long résumé or JD pasted in full would
+  // blow that, createRoom throws, and the interview never starts. Clip the free-text
+  // fields — the agent only needs them for context, and the plan (already built from
+  // the full text server-side) is what actually drives the interview.
+  const clip = (s: string | null, max: number) =>
+    s && s.length > max ? `${s.slice(0, max)}\n[…truncated]` : s;
+
+  try {
+    await svc.createRoom({
+      name: room,
+      metadata: JSON.stringify({
+        interviewId: id,
+        role: iv.role,
+        company: iv.company,
+        companyType: iv.companyType,
+        seniority: iv.seniority,
+        type: iv.type,
+        plan: iv.planJson,
+        resumeText: clip(iv.resumeText, META_TEXT_MAX),
+        jdText: clip(iv.jdText, META_TEXT_MAX),
+      }),
+      emptyTimeout: 10 * 60,
+      departureTimeout: 60,
+    });
+  } catch (err) {
+    console.error("livekit createRoom failed", err);
+    return new Response("Couldn't start the interview room. Please try again.", {
+      status: 502,
+    });
+  }
 
   const at = new AccessToken(apiKey, apiSecret, { identity: userId, ttl: "15m" });
   at.addGrant({
@@ -85,9 +111,15 @@ export async function POST(
 
   // ponytail: BFF marks live on join; the agent-confirmed transition (§2.1 step
   // 4) comes with agent dispatch in milestone 3.
+  // Reconnects land here too (status is already "live"), so only stamp startedAt on
+  // the first join — otherwise every reconnect resets it and the duration is wrong.
   await db
     .update(interviews)
-    .set({ livekitRoom: room, status: "live", startedAt: new Date() })
+    .set({
+      livekitRoom: room,
+      status: "live",
+      ...(iv.status === "live" ? {} : { startedAt: new Date() }),
+    })
     .where(and(eq(interviews.id, id), eq(interviews.userId, userId)));
 
   return Response.json({ token, serverUrl, room });

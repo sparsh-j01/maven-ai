@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { SUPPORT_EMAIL } from "@/lib/contact";
 
 // Standard SaaS cancellation & refund policy — required by Razorpay for
 // activation. DEV NOTE: the 7-day money-back window is a business choice; adjust
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 };
 
 const UPDATED = "July 2026";
-const EMAIL = "sparshjjwala.work@gmail.com";
+const EMAIL = SUPPORT_EMAIL;
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -98,8 +99,8 @@ export default function RefundsPage() {
           <Section title="How refunds are issued">
             <p>
               Approved refunds go back to your original payment method through our
-              processor (Razorpay in India, Stripe elsewhere). It usually takes
-              5–10 business days for the amount to appear, depending on your bank.
+              processor (Razorpay). It usually takes 5–10 business days for the
+              amount to appear, depending on your bank.
             </p>
           </Section>
 

@@ -42,6 +42,17 @@ export function formatTranscript(turns: ScorerTurn[]): string {
     .join("\n");
 }
 
+// Checklist 4.3: the grader will confidently score noise (a 2-minute garbled
+// interview → a precise 15/100). "Thin" = too little real candidate speech to
+// trust the number; the scorer flags such reports instead of presenting the
+// score bare. ponytail: crude length heuristic — swap for an STT-confidence
+// signal if the agent ever surfaces one.
+export function transcriptIsThin(turns: ScorerTurn[]): boolean {
+  const candidate = turns.filter((t) => t.speaker === "candidate");
+  const chars = candidate.reduce((n, t) => n + t.text.trim().length, 0);
+  return candidate.length < 3 || chars < 200;
+}
+
 // Transcript/resume/code go in fenced blocks; the instruction above marks them as data.
 export function buildScorerPrompt(
   input: ScorerInput,

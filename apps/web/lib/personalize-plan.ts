@@ -6,6 +6,7 @@ import type {
   Seniority,
 } from "@maven-ai/shared";
 import { assemblePlan, buildPlan, planCandidates } from "@maven-ai/shared";
+import { MODELS } from "@maven-ai/shared/models";
 import { retrieveCandidates } from "@/lib/retrieve";
 
 // Fails safe at every layer: RAG retrieval falls back to the deterministic order,
@@ -13,7 +14,7 @@ import { retrieveCandidates } from "@/lib/retrieve";
 // hijacked or malformed response can't inject questions), and the whole thing falls
 // back to buildPlan. Creation never blocks on the model or the vector store.
 
-const MODEL = "gemini-2.5-flash";
+const MODEL = MODELS.plan;
 const TIMEOUT_MS = 7000;
 
 type Input = {

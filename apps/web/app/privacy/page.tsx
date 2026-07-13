@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { SUPPORT_EMAIL } from "@/lib/contact";
 
 // Baseline privacy policy written to what the app actually does (Clerk auth,
-// résumé text/PDF, interview audio + transcripts, Stripe billing, the named
+// résumé text/PDF, interview audio + transcripts, Razorpay billing, the named
 // subprocessors). DEV NOTE: have counsel review before public launch and set a
 // real legal entity + contact addresses — the emails below are placeholders.
 
@@ -82,8 +83,8 @@ export default function PrivacyPage() {
               Only the service providers (&ldquo;subprocessors&rdquo;) that make
               Maven run — under contract, for these purposes only: authentication
               (Clerk), real-time voice and speech (LiveKit, Deepgram, Google),
-              question and scoring models (Google), payments (Stripe,
-              Razorpay), file and database storage (Cloudflare, Neon), and
+              question and scoring models (Google), payments (Razorpay),
+              file and database storage (Cloudflare, Neon), and
               error/usage monitoring (Sentry, PostHog, Langfuse). We do not sell
               personal data or share it for advertising.
             </p>
@@ -106,8 +107,7 @@ export default function PrivacyPage() {
               You can view your interviews and reports in your dashboard. You can
               request a copy of your data, or deletion of your account and its
               content, by emailing{" "}
-              <a className="text-teal hover:underline" href="mailto:sparshjjwala.work@gmail.com">
-                sparshjjwala.work@gmail.com
+              <a className="text-teal hover:underline" href={`mailto:${SUPPORT_EMAIL}`}>
               </a>{" "}
               or from the{" "}
               <Link className="text-teal hover:underline" href="/delete-account">
@@ -170,8 +170,7 @@ export default function PrivacyPage() {
           <Section title="Contact">
             <p>
               Questions about privacy? Email{" "}
-              <a className="text-teal hover:underline" href="mailto:sparshjjwala.work@gmail.com">
-                sparshjjwala.work@gmail.com
+              <a className="text-teal hover:underline" href={`mailto:${SUPPORT_EMAIL}`}>
               </a>
               .
             </p>

@@ -110,17 +110,31 @@ export default async function ReportPage({
     .orderBy(asc(codeSubmissions.createdAt));
   const lastSubmission = submissions.at(-1);
 
-  // Not finished yet: send the user back to the room, not an empty report.
-  if (iv.status === "provisioning" || iv.status === "live") {
+  // Not finished (or not started) yet: send the user back, not to an empty report.
+  // A `requested` interview has no room to go back to — /token 403s until an admin
+  // approves it — so pointing it at /interview/[id] would be a dead end. Send it to
+  // the dashboard instead, same rule the dashboard list follows.
+  const NOT_SCORED = new Set([
+    "requested",
+    "approved",
+    "provisioning",
+    "live",
+  ]);
+  if (NOT_SCORED.has(iv.status)) {
+    const pending = iv.status === "requested";
     return (
       <Shell role={iv.role} sub={subtitle(iv)}>
         <Card className="text-center">
-          <p className="text-fg/70">This interview hasn&apos;t finished yet.</p>
+          <p className="text-fg/70">
+            {pending
+              ? "This interview is waiting for approval. You'll be able to start it once it's approved."
+              : "This interview hasn't finished yet."}
+          </p>
           <Link
-            href={`/interview/${id}`}
+            href={pending ? "/dashboard" : `/interview/${id}`}
             className={`${buttonVariants({ variant: "accent" })} mt-4`}
           >
-            Back to the interview
+            {pending ? "Back to dashboard" : "Back to the interview"}
           </Link>
         </Card>
       </Shell>

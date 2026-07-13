@@ -6,6 +6,7 @@ import {
 } from "@maven-ai/shared";
 import { Check, ChevronDown } from "lucide-react";
 import { cookies, headers } from "next/headers";
+import { SUPPORT_EMAIL, mailto } from "@/lib/contact";
 import Link from "next/link";
 import { HeroDesk } from "@/components/hero-desk";
 import { HowItWorks } from "@/components/how-it-works";
@@ -395,7 +396,7 @@ export default async function LandingPage() {
           <p className="mt-6 text-center text-muted">
             Can&apos;t find what you&apos;re looking for? Contact our{" "}
             <a
-              href="mailto:sparshjjwala.work@gmail.com"
+              href={`mailto:${SUPPORT_EMAIL}`}
               className="font-medium text-accent hover:underline"
             >
               support team
@@ -451,11 +452,11 @@ export default async function LandingPage() {
             <FooterCol
               title="Support"
               links={[
-                { label: "Contact", href: "mailto:sparshjjwala.work@gmail.com" },
+                { label: "Contact", href: mailto() },
                 { label: "Security", href: "/security" },
                 {
                   label: "Feedback",
-                  href: "mailto:sparshjjwala.work@gmail.com?subject=Feedback",
+                  href: mailto("Feedback"),
                 },
               ]}
             />

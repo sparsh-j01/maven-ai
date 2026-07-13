@@ -37,7 +37,8 @@ from livekit.agents import (
 from livekit import rtc
 from livekit.plugins import deepgram, google, silero
 
-from coding import LANGUAGE_IDS, TESTS, expected_for, grade, run_on_judge0
+from coding import LANGUAGE_IDS, TESTS, cases_for, grade, run_on_judge0
+from models import AGENT_LLM_MODEL, STT_MODEL, TTS_MODEL
 from plan_walker import PlanWalker
 from prompt_context import context_block, keyterms
 from telemetry import setup_langfuse
@@ -87,7 +88,7 @@ def _make_session(keyterms: Optional[list[str]] = None) -> AgentSession:
         # English locale. India-first product (§billing), and en-US mangles
         # Indian-accented names and technical terms. Swap to "multi" if you need
         # US/UK accents equally well, or make it per-interview.
-        "model": "nova-3",
+        "model": STT_MODEL,
         "language": "en-IN",
     }
     # Keyterm prompting: boost the candidate's name + the tools on their resume so
@@ -100,8 +101,8 @@ def _make_session(keyterms: Optional[list[str]] = None) -> AgentSession:
         # commit_user_turn on mic release). A VAD here re-introduces silence-based
         # endpointing that ends the turn ~2s into a thinking pause — the bug.
         stt=deepgram.STT(**stt_kwargs),
-        llm=google.LLM(model="gemini-2.5-flash"),
-        tts=deepgram.TTS(model="aura-asteria-en"),
+        llm=google.LLM(model=AGENT_LLM_MODEL),
+        tts=deepgram.TTS(model=TTS_MODEL),
         allow_interruptions=False,
         turn_detection="manual",
     )
@@ -260,12 +261,15 @@ class InterviewAgent(Agent):
         Best-effort: a DB blip must never interrupt the live interview."""
         if not self._db:
             return
-        now = int(time.monotonic() * 1000 - self._start_ms)
-        start = self._last_offset
-        end = now if now > start else start
-        self._last_offset = end
         try:
             async with self._db_lock:
+                # Under the lock: start/end are derived from _last_offset, so two
+                # turns racing here would otherwise read the same value and write
+                # overlapping, mis-ordered ts_start_ms/ts_end_ms.
+                now = int(time.monotonic() * 1000 - self._start_ms)
+                start = self._last_offset
+                end = now if now > start else start
+                self._last_offset = end
                 await self._db.execute(
                     "INSERT INTO interview_turns "
                     "(interview_id, speaker, text, ts_start_ms, ts_end_ms, phase) "
@@ -382,20 +386,27 @@ class InterviewAgent(Agent):
             return {"ok": False, "error": "run limit reached for this interview"}
         self._runs += 1
 
-        test = TESTS[self._coding_id]
-        expected = expected_for(self._coding_id)
-        try:
-            result = await run_on_judge0(language, code, test["stdin"])
-        except Exception:
-            logger.exception("judge0 run failed")
-            return {"ok": False, "error": "sandbox unavailable"}
-
-        stdout = result.get("stdout") or ""
-        stderr = (result.get("stderr") or "") + (result.get("compile_output") or "")
-        status = (result.get("status") or {}).get("description", "")
-        # Grade from the captured stdout ourselves so the verdict is independent of
-        # Judge0's comparison mode; status is for the human-readable summary.
-        passed = grade(expected, stdout)
+        # Run every hidden case; the candidate passes only if ALL do. Short-circuit
+        # on the first failure so an iterating (still-wrong) solution stays a single
+        # Judge0 round trip — only a correct solution pays for the whole battery.
+        # ponytail: sequential wait=true submissions. Switch to Judge0 batch if the
+        # all-pass latency (one round trip per case) starts to bite.
+        stdout = stderr = status = ""
+        passed = True
+        for stdin, expected in cases_for(self._coding_id):
+            try:
+                result = await run_on_judge0(language, code, stdin)
+            except Exception:
+                logger.exception("judge0 run failed")
+                return {"ok": False, "error": "sandbox unavailable"}
+            stdout = result.get("stdout") or ""
+            stderr = (result.get("stderr") or "") + (result.get("compile_output") or "")
+            status = (result.get("status") or {}).get("description", "")
+            # Grade from the captured stdout ourselves so the verdict is independent
+            # of Judge0's comparison mode; status is for the human-readable summary.
+            if not grade(expected, stdout):
+                passed = False
+                break
         await self._persist_submission(language, code, stdout, passed)
         self._last_run = {"passed": passed, "status": status}
         logger.info("run_code passed=%s status=%s", passed, status)
@@ -466,8 +477,12 @@ class InterviewAgent(Agent):
     async def end_interview(self) -> str:
         """End the interview. Call this only after you have delivered the closing
         remarks and the plan is complete."""
-        if self._cap_task:
-            self._cap_task.cancel()  # plan finished before the cap — stand it down
+        # _cap_task is deliberately left running. _finalize() marks the row and tells
+        # the room, but only _enforce_time_cap closes the session and deletes the
+        # room — so if we cancelled the cap here and the client never disconnected
+        # (crash, dropped connection), nothing would ever force closure and the
+        # documented "no matter what" ceiling would be a lie. _finalize is idempotent,
+        # so leaving the cap armed costs nothing on the happy path.
         await self._finalize("plan complete")
         # The report is generated asynchronously: status='processing' is the
         # trigger the scorer watches for, kicked when the report page opens (§4.3).
@@ -543,6 +558,16 @@ async def entrypoint(ctx: JobContext) -> None:
     )
     session = _make_session(keyterms=keyterms(meta))
 
+    # asyncio only holds weak references to tasks, so a bare create_task() can be
+    # garbage-collected mid-flight — silently dropping a persisted turn or a code Run.
+    # Hold a strong ref until the task finishes.
+    _bg_tasks: set[asyncio.Task] = set()
+
+    def _spawn(coro) -> None:
+        task = asyncio.create_task(coro)
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
+
     # Coding round: the browser broadcasts the editor buffer and Run requests over
     # the data channel (§4.2). The buffer is display/control data, never trusted as
     # a control signal beyond what run_code re-validates server-side (F1, §8.1).
@@ -560,7 +585,7 @@ async def entrypoint(ctx: JobContext) -> None:
                 "code": msg.get("code", ""),
             }
         elif msg.get("type") == "run":
-            asyncio.create_task(agent.handle_run())
+            _spawn(agent.handle_run())
 
     # Push-to-talk turn control (§2.2): with turn_detection="manual" the session
     # waits for us to commit — so we drive it off the mic mute state the browser
@@ -604,7 +629,7 @@ async def entrypoint(ctx: JobContext) -> None:
         text = (getattr(item, "text_content", None) or "").strip()
         speaker = {"user": "candidate", "assistant": "interviewer"}.get(role)
         if speaker and text:
-            asyncio.create_task(agent.record_turn(speaker, text))
+            _spawn(agent.record_turn(speaker, text))
 
     await session.start(agent=agent, room=ctx.room)
     # Don't greet an empty room: the BFF pre-creates the room (with metadata), so

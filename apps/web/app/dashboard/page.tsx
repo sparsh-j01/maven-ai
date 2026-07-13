@@ -1,13 +1,21 @@
 import { UserButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
-import { feedbackReports, getDb, interviews, users } from "@maven-ai/db";
+import {
+  feedbackReports,
+  getDb,
+  interviews,
+  subscriptions,
+  users,
+} from "@maven-ai/db";
 import { monthStart, PLAN_LIMITS } from "@maven-ai/shared";
 import { desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { TopBar } from "@/components/top-bar";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { CancelButton } from "@/components/cancel-button";
 import { UpgradeButton } from "@/components/upgrade-button";
+import { STATUS_DOT, STATUS_LABEL } from "@/lib/interview-status";
 
 export const dynamic = "force-dynamic";
 
@@ -18,20 +26,9 @@ const hrefFor = (iv: { id: string; status: string }) =>
     ? `/interview/${iv.id}/report`
     : `/interview/${iv.id}`;
 
-const STATUS_DOT: Record<string, string> = {
-  live: "bg-teal",
-  provisioning: "bg-teal",
-  processing: "bg-amber animate-pulse",
-  failed: "bg-danger",
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  live: "Live",
-  provisioning: "Starting",
-  processing: "Scoring",
-  failed: "Failed",
-  ready: "Ready",
-};
+// A `requested` interview has no room yet (the /token gate 403s until approved),
+// so its row isn't a link — everything else routes to its report or live room.
+const isClickable = (status: string) => status !== "requested";
 
 const fmtDate = (d: Date) =>
   d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -83,17 +80,32 @@ async function getPlan(userId: string): Promise<string> {
   }
 }
 
+// "cancelling" = cancel scheduled at cycle end; they're still Pro until it lapses.
+async function getSubStatus(userId: string): Promise<string | null> {
+  try {
+    const [row] = await getDb()
+      .select({ status: subscriptions.status })
+      .from(subscriptions)
+      .where(eq(subscriptions.userId, userId));
+    return row?.status ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ upgraded?: string }>;
+  searchParams: Promise<{ requested?: string }>;
 }) {
   const { userId } = await auth();
-  const { upgraded } = await searchParams;
+  const { requested } = await searchParams;
   const rows = userId ? await listInterviews(userId) : [];
   const plan = userId ? await getPlan(userId) : "free";
-  // Just back from checkout: the webhook may lag, so trust the redirect and show Pro.
-  const isPro = plan === "pro" || upgraded === "1";
+  const subStatus = userId ? await getSubStatus(userId) : null;
+  // Plan comes from the DB only — the Razorpay webhook is what makes someone Pro.
+  const isPro = plan === "pro";
+  const cancelling = subStatus === "cancelling";
 
   const start = monthStart();
   const usedThisMonth = rows.filter(
@@ -105,6 +117,11 @@ export default async function DashboardPage({
     .filter((r) => r.status === "ready" && r.overallScore != null)
     .map((r) => Number(r.overallScore))
     .reverse();
+
+  // Both stats come from the rows already loaded — no extra query. That caps them
+  // at the last 20 interviews, which the cards say out loud.
+  const completedCount = rows.filter((r) => r.status === "ready").length;
+  const bestScore = trend.length ? Math.round(Math.max(...trend)) : null;
 
   // limit mirrors the enforced plan cap (entitlements.ts).
   const limit = isPro
@@ -123,16 +140,28 @@ export default async function DashboardPage({
         right={
           <>
             {!isPro && <UpgradeButton />}
+            {isPro && !cancelling && <CancelButton />}
             <UserButton />
           </>
         }
       />
 
-      {upgraded === "1" ? (
+      {cancelling ? (
         <Card className="mt-6 flex items-center gap-3 py-4">
-          <span className="h-2 w-2 shrink-0 rounded-full bg-accent" aria-hidden />
+          <span className="h-2 w-2 shrink-0 rounded-full bg-amber" aria-hidden />
           <p className="text-sm text-fg/80">
-            You&apos;re on Pro — unlimited interviews from here.
+            Your subscription is set to cancel at the end of this billing period.
+            You keep Pro until then, and won&apos;t be charged again.
+          </p>
+        </Card>
+      ) : null}
+
+      {requested === "1" ? (
+        <Card className="mt-6 flex items-center gap-3 py-4">
+          <span className="h-2 w-2 shrink-0 rounded-full bg-amber" aria-hidden />
+          <p className="text-sm text-fg/80">
+            Request submitted — your plan is ready. You can start the interview
+            once it&apos;s approved.
           </p>
         </Card>
       ) : null}
@@ -146,8 +175,8 @@ export default async function DashboardPage({
             Your interviews
           </h1>
         </div>
-        {/* At the free cap, the primary CTA goes straight to checkout
-            (Razorpay/Stripe) instead of a setup form the API would 402. */}
+        {/* At the free cap, the primary CTA goes straight to Razorpay checkout
+            instead of a setup form the API would 402. */}
         {atLimit && !isPro ? (
           <UpgradeButton />
         ) : (
@@ -255,38 +284,85 @@ export default async function DashboardPage({
                 </p>
               )}
             </Card>
+
+            <Card>
+              <p className="font-mono text-xs uppercase tracking-widest text-fg/50">
+                Best score
+              </p>
+              <div className="mt-3 flex items-baseline gap-2">
+                <span className="font-display font-medium text-4xl tracking-tight">
+                  {bestScore ?? "—"}
+                </span>
+                <span className="text-sm text-fg/50">
+                  {bestScore == null ? "no scored interviews yet" : "/ 100"}
+                </span>
+              </div>
+              <p className="mt-3 text-xs text-fg/50">
+                Your highest across the interviews below.
+              </p>
+            </Card>
+
+            <Card>
+              <p className="font-mono text-xs uppercase tracking-widest text-fg/50">
+                Completed
+              </p>
+              <div className="mt-3 flex items-baseline gap-2">
+                <span className="font-display font-medium text-4xl tracking-tight">
+                  {completedCount}
+                </span>
+                <span className="text-sm text-fg/50">
+                  {completedCount === 1 ? "scored report" : "scored reports"}
+                </span>
+              </div>
+              <p className="mt-3 text-xs text-fg/50">
+                Interviews you finished and got graded.
+              </p>
+            </Card>
           </div>
 
           <Card className="mt-5 divide-y divide-fg/10 p-0">
-            {rows.map((iv) => (
-              <Link
-                key={iv.id}
-                href={hrefFor(iv)}
-                className="flex items-center justify-between gap-4 px-6 py-4 transition-colors hover:bg-fg/[0.03]"
-              >
-                <div className="min-w-0">
-                  <p className="truncate font-medium">{iv.role}</p>
-                  <p className="mt-0.5 font-mono text-xs uppercase tracking-wide text-fg/50">
-                    {fmtSeniority(iv.seniority)} · {iv.type.replace(/_/g, " ")}
-                    {iv.company ? ` · ${iv.company}` : ""}
-                    {iv.createdAt ? ` · ${fmtDate(iv.createdAt)}` : ""}
-                  </p>
+            {rows.map((iv) => {
+              const rowClass =
+                "flex items-center justify-between gap-4 px-6 py-4";
+              const inner = (
+                <>
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{iv.role}</p>
+                    <p className="mt-0.5 font-mono text-xs uppercase tracking-wide text-fg/50">
+                      {fmtSeniority(iv.seniority)} · {iv.type.replace(/_/g, " ")}
+                      {iv.company ? ` · ${iv.company}` : ""}
+                      {iv.createdAt ? ` · ${fmtDate(iv.createdAt)}` : ""}
+                    </p>
+                  </div>
+                  {iv.status === "ready" && iv.overallScore != null ? (
+                    <span className="shrink-0 font-mono text-lg font-semibold text-accent">
+                      {Math.round(Number(iv.overallScore))}
+                      <span className="text-xs font-normal text-fg/40">/100</span>
+                    </span>
+                  ) : (
+                    <span className="flex shrink-0 items-center gap-2 font-mono text-xs uppercase tracking-wide text-fg/60">
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[iv.status] ?? "bg-fg/30"}`}
+                      />
+                      {STATUS_LABEL[iv.status] ?? iv.status}
+                    </span>
+                  )}
+                </>
+              );
+              return isClickable(iv.status) ? (
+                <Link
+                  key={iv.id}
+                  href={hrefFor(iv)}
+                  className={`${rowClass} transition-colors hover:bg-fg/[0.03]`}
+                >
+                  {inner}
+                </Link>
+              ) : (
+                <div key={iv.id} className={rowClass}>
+                  {inner}
                 </div>
-                {iv.status === "ready" && iv.overallScore != null ? (
-                  <span className="shrink-0 font-mono text-lg font-semibold text-accent">
-                    {Math.round(Number(iv.overallScore))}
-                    <span className="text-xs font-normal text-fg/40">/100</span>
-                  </span>
-                ) : (
-                  <span className="flex shrink-0 items-center gap-2 font-mono text-xs uppercase tracking-wide text-fg/60">
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[iv.status] ?? "bg-fg/30"}`}
-                    />
-                    {STATUS_LABEL[iv.status] ?? iv.status}
-                  </span>
-                )}
-              </Link>
-            ))}
+              );
+            })}
           </Card>
         </>
       )}

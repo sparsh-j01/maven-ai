@@ -1,8 +1,10 @@
-// Regional + annual pricing: India pays ₹ via Razorpay, everyone else $ via Stripe.
-// One source of truth so the pricing UI and the checkout route can't drift.
+// Regional + annual pricing. Single gateway for now: Razorpay (test mode). India
+// is billed in ₹; INTL still sees a $ display price but is charged via the ₹ plan
+// until Razorpay International (or a global gateway) is wired. One source of truth
+// so the pricing UI and the checkout route can't drift.
 
 export type Region = "IN" | "INTL";
-export type Gateway = "razorpay" | "stripe";
+export type Gateway = "razorpay";
 export type BillingCycle = "monthly" | "annual";
 
 export const REGION_PRICING: Record<
@@ -35,7 +37,7 @@ export const REGION_PRICING: Record<
     },
   },
   INTL: {
-    gateway: "stripe",
+    gateway: "razorpay",
     currency: "USD",
     symbol: "$",
     monthly: { perMonth: 19, display: "$19" },
@@ -51,10 +53,6 @@ export const REGION_PRICING: Record<
 
 export function regionForCountry(country?: string | null): Region {
   return (country ?? "").toUpperCase() === "IN" ? "IN" : "INTL";
-}
-
-export function isRegion(v: string): v is Region {
-  return v === "IN" || v === "INTL";
 }
 
 export function isCycle(v: string): v is BillingCycle {

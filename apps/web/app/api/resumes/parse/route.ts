@@ -23,6 +23,13 @@ function throttled(userId: string): boolean {
   const recent = (hits.get(userId) ?? []).filter((t) => now - t < WINDOW_MS);
   recent.push(now);
   hits.set(userId, recent);
+  // Keys are never otherwise removed, so a warm instance accumulates one entry per
+  // distinct caller forever. Sweep the expired ones once the map gets big.
+  if (hits.size > 10_000) {
+    for (const [uid, ts] of hits) {
+      if (ts.every((t) => now - t >= WINDOW_MS)) hits.delete(uid);
+    }
+  }
   return recent.length > MAX_PARSES;
 }
 

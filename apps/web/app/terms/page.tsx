@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { SUPPORT_EMAIL } from "@/lib/contact";
 
 // Baseline terms of service for a practice-interview product. DEV NOTE: have
 // counsel review and set a real legal entity + governing law before public
@@ -133,8 +134,7 @@ export default function TermsPage() {
           <Section title="Contact">
             <p>
               Questions about these terms? Email{" "}
-              <a className="text-teal hover:underline" href="mailto:sparshjjwala.work@gmail.com">
-                sparshjjwala.work@gmail.com
+              <a className="text-teal hover:underline" href={`mailto:${SUPPORT_EMAIL}`}>
               </a>
               .
             </p>

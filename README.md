@@ -9,8 +9,8 @@ transcript.
 > contracts, auth, web shell, the live turn-based voice loop, the plan-driven
 > interview state machine, the async scored feedback report (rubric radar +
 > transcript), the live coding round (Monaco + Judge0 sandbox), resume-driven
-> RAG personalization, and regional billing (Stripe globally + Razorpay in
-> India, monthly/annual) with plan entitlements — plus Sentry + Langfuse
+> RAG personalization, Razorpay billing (monthly/annual) with plan entitlements,
+> and admin-approved interview requests — plus Sentry + Langfuse
 > observability, a scorer eval harness, CI, and a full "Viva Glass" design
 > pass across the app (glass design system, animated landing hero, loading
 > skeletons, error/empty and not-found states, legal pages, location-based
@@ -31,8 +31,10 @@ and the rigor of the scoring, not the UI.
   Push-to-talk with manual turn control and no barge-in: the candidate's turn
   ends when they release the mic, so pausing mid-answer to think never cuts them
   off. Clean turn ownership that stays reliable on flaky connections.
-- **Provider adapters** for STT, LLM, and TTS. Swapping Gemini → Claude or
-  Deepgram → Cartesia is a config change, not a rewrite.
+- **Provider adapters + a model gate.** STT, LLM, and TTS models come from one
+  config (env vars; `packages/shared/src/models.ts` + `apps/agent/models.py`), so
+  swapping a model is a config change — and the scorer model is proven "good
+  enough" by the eval before it ships. See [Swapping a model](#swapping-a-model).
 - **State machine + tool-use** drives the interview through phases
   (`intro → warmup → technical → coding → behavioral → wrap_up`). The interview
   cursor is persisted, so an agent restart resumes where it left off.
@@ -44,9 +46,13 @@ and the rigor of the scoring, not the UI.
   the exact model that ships. See [Evaluating the scorer](#evaluating-the-scorer).
 - **RAG personalization.** Resume + role embedded and matched against a curated
   question bank (Postgres + pgvector) so questions stay grounded.
-- **Regional billing.** Free (3 fully-tailored interviews/mo) vs Pro (unlimited);
-  ₹ via Razorpay in India, $ via Stripe everywhere else, monthly or annual
-  (≈2 months free) — region auto-detected by IP with a manual currency toggle.
+- **Billing.** Free (3 fully-tailored interviews/mo) vs Pro (unlimited), monthly
+  or annual (≈2 months free), via Razorpay (test mode for now). Region is
+  auto-detected by IP for display pricing; every region checks out via Razorpay.
+- **Request-gated interviews.** A candidate can set up an interview and generate
+  its plan for free, but the costly live voice session (LiveKit + STT + LLM + TTS)
+  only starts after an admin approves the request — a hard spend gate at the
+  choke point.
 
 ## Evaluating the scorer
 
@@ -107,15 +113,37 @@ the model's *claim audit*, not just its output:
 
 ### Determinism
 
-All grading runs at `temperature: 0`, so scores are reproducible and can be
-regression-tested. Any axis that drifts run-to-run is re-anchored to a countable
-rule until it's stable.
+Grading runs at `temperature: 0` — in the eval *and in production*, from one
+shared setting (`SCORER_TEMPERATURE`), so the eval measures exactly what ships
+and scores are reproducible. Any axis that drifts run-to-run is re-anchored to a
+countable rule until it's stable.
 
 ```bash
 pnpm eval:sanity   # assert a word-count scorer is REJECTED (no API key needed)
 pnpm test          # standing tests: fakes behave, no API calls
 pnpm eval:live     # the real grader through every assertion (~5 API calls)
+pnpm eval          # live spot-check: prints scores + a prompt-injection resistance check
 ```
+
+## Swapping a model
+
+Every model id lives in one place — env vars, read by
+`packages/shared/src/models.ts` (TS: scorer, plan, résumé) and
+`apps/agent/models.py` (Python agent: LLM, STT, TTS). Change a model without
+touching code, and prove it's good enough *before* it ships:
+
+```bash
+# try a candidate scorer model — the eval reads the same SCORER_MODEL the app does
+SCORER_MODEL=gemini-2.5-pro pnpm eval:live   # the guarded gate: must pass every assertion
+SCORER_MODEL=gemini-2.5-pro pnpm eval        # eyeball scores + injection resistance
+```
+
+Because the scorer id **and** temperature feed both production and the eval, a
+green `eval:live` means the candidate model grades the golden transcripts
+correctly. Run it a few times (an LLM number is only trustworthy once it's stable
+across runs). If it passes, set `SCORER_MODEL` in the deploy env — no code change.
+Agent-side models (`AGENT_LLM_MODEL` / `STT_MODEL` / `TTS_MODEL`) swap the same
+way; verify those in a live interview rather than the scorer eval.
 
 ## Architecture
 
@@ -152,16 +180,16 @@ LiveKit token. All third-party calls go through the BFF or the agent.
 | Data | Postgres + pgvector, Drizzle ORM |
 | Storage | Cloudflare R2 (audio + resumes) |
 | Async | Inngest |
-| Billing | Stripe (global, $) + Razorpay (India, ₹) — monthly/annual |
-| Code sandbox | Self-hosted Judge0 |
+| Billing | Razorpay (monthly/annual) — test mode for now |
+| Code sandbox | Judge0 — hosted CE (free tier) or self-hosted |
 | Observability | Langfuse, Sentry, PostHog |
 
 ## Monorepo layout
 
 ```
 apps/
-  web/        Next.js app + BFF route handlers
-  agent/      Python LiveKit Agents worker (the interviewer)
+  web/        Next.js app + BFF route handlers (deploys to Vercel)
+  agent/      Python LiveKit Agents worker (the interviewer) — Dockerfile + fly.toml
 packages/
   db/         Drizzle schema + migrations (Postgres + pgvector)
   shared/     shared TypeScript types + zod schemas (rubric, interview plan)
@@ -173,7 +201,8 @@ infra/
 ## Getting started
 
 **Requirements:** Node 22.13+ (pnpm 11 needs it), pnpm 11, Docker (for local
-Postgres/Redis), Python 3.9+ (for the voice agent).
+Postgres/Redis), Python 3.9+ for local agent dev (prod pins 3.12 — see the agent
+`Dockerfile`).
 
 The app runs as four processes in development: local infra (Docker), the web app,
 the voice agent, and the async job runner (Inngest).
@@ -211,6 +240,26 @@ INNGEST_DEV=1 npx inngest-cli@latest dev -u http://localhost:3000/api/inngest
 | `pnpm db:generate` | Generate SQL migrations from the schema |
 | `pnpm db:push` | Push the schema straight to the database |
 
+## Deploying
+
+Three runtimes deploy separately:
+
+- **Web / BFF → Vercel.** Standard Next.js deploy; set the env vars from
+  `.env.example` (Clerk, `DATABASE_URL`, LiveKit, Razorpay, `ADMIN_USER_IDS`, …).
+  Point the Razorpay webhook at `https://<host>/api/webhooks/razorpay`.
+- **Voice agent → Fly.io.** A long-lived worker (no inbound HTTP; it dials out to
+  LiveKit), so it can't run on Vercel. `apps/agent` ships a `Dockerfile`
+  (Python 3.12) and `fly.toml`; deploy with `fly deploy` and set secrets with
+  `fly secrets set` (see the fly.toml header for the list). Keep one machine
+  always-on — there's no request to wake it.
+- **Judge0 (coding sandbox).** Cheapest launch path is hosted Judge0 CE on
+  RapidAPI (free tier ≈ 50 calls/day — plenty, since interviews are
+  admin-approved): set `JUDGE0_URL` + `JUDGE0_RAPIDAPI_KEY`. Self-host on Fly for
+  scale (use `JUDGE0_AUTH_TOKEN` instead).
+- **Postgres → Neon**, **async jobs → Inngest Cloud**. The scorer eval
+  (`pnpm eval:live`) is a manual gate — it needs a paid API key, so it's run
+  before a model change, not in CI.
+
 ## Security
 
 - **BFF boundary** — the browser never holds provider keys or the LiveKit
@@ -220,10 +269,12 @@ INNGEST_DEV=1 npx inngest-cli@latest dev -u http://localhost:3000/api/inngest
 - **Sandboxed code execution** — the coding round runs untrusted code in an
   isolated sandbox with no network and hard CPU/memory/wall-clock limits, never
   in the agent process.
-- **Spend caps** — every interview is hard-capped at 10 minutes of wall-clock
-  (the voice loop auto-ends and the room is torn down), the coding sandbox is
-  bounded per submission (25 runs, 20 KB), and interview creation is rate-limited
-  per user (10/hour) so one account cannot drain metered services.
+- **Spend caps** — the live voice session (the priciest path) only starts after
+  an admin approves the interview request, so no one can spin up interviews to
+  burn API credits. On top of that: every interview is hard-capped at 10 minutes
+  of wall-clock (the voice loop auto-ends and the room is torn down), the coding
+  sandbox is bounded per submission (25 runs, 20 KB), and interview creation is
+  rate-limited per user (10/hour) so one account cannot drain metered services.
 - **Security headers + CSP** — an enforced Content-Security-Policy (script-src
   pinned to self + the Clerk origin), plus `X-Frame-Options: DENY`, HSTS, and
   `nosniff`, set once in `next.config.ts`.
@@ -231,8 +282,8 @@ INNGEST_DEV=1 npx inngest-cli@latest dev -u http://localhost:3000/api/inngest
   delimited *data* (the model is told to ignore instructions inside it) and the
   generated plan is grounded to the curated question bank, so a hijacked or
   malformed model response degrades to the deterministic plan.
-- **Webhooks are signature-verified** — Stripe and Razorpay billing webhooks
-  authenticate by HMAC signature (they are not Clerk-protected).
+- **Webhooks are signature-verified** — the Razorpay billing webhook
+  authenticates by timing-safe HMAC signature (it is not Clerk-protected).
 - **Premium content is gated server-side** — the Pro study plan is never
   generated for free users (dropped from the prompt and response schema, so no
   tokens are spent) and never sent to the browser; the free report renders a
@@ -248,9 +299,13 @@ Built and in place:
 5. ✓ End → async feedback report + rubric radar + transcript
 6. ✓ Coding round (Monaco + sandbox + run_code)
 7. ✓ Resume upload + RAG personalization
-8. ✓ Billing (Stripe + Razorpay) + entitlements, observability, evals, CI/CD
+8. ✓ Billing (Razorpay) + entitlements, observability, evals, CI/CD
 9. ✓ UI/UX polish (skeletons, transitions, empty/error states)
+10. ✓ Launch hardening: Razorpay-only billing, admin-approved interview requests,
+    single-source model config + eval gate, deploy artifacts (agent Docker/Fly,
+    hosted Judge0), CI builds the web app + runs the Python grader tests
 
 Next:
 - Expand the eval suite beyond the current scoring axes (competency coverage, adversarial cases)
 - Harden reliability (retry/backoff on external calls, cost instrumentation)
+- Global card payments (Razorpay International or a second gateway) beyond test mode
