@@ -18,6 +18,10 @@ export function PrefToggle<T extends string>({
   const router = useRouter();
   function pick(v: T) {
     if (v === current) return;
+    // pick() only ever runs from onClick, and writing a cookie is exactly the
+    // "update an external system" case. The compiler rule can't prove this isn't
+    // reachable during render; it isn't.
+    // eslint-disable-next-line react-hooks/immutability
     document.cookie = `${cookie}=${v}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
     router.refresh();
   }

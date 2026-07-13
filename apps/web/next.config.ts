@@ -39,7 +39,9 @@ function contentSecurityPolicy(): string {
 
 const nextConfig: NextConfig = {
   // Hide the Next.js dev indicator (the "N"/route-status badge in the corner).
-  devIndicators: { appIsrStatus: false, buildActivity: false },
+  // Next 16 dropped the per-flag form (appIsrStatus/buildActivity); `false` is the
+  // replacement for turning it off entirely.
+  devIndicators: false,
 
   transpilePackages: ["@maven-ai/db", "@maven-ai/shared"],
 
