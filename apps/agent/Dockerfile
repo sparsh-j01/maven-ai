@@ -16,6 +16,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # App source (see .dockerignore — the local .venv and caches are excluded).
 COPY . .
 
+# Drop root. The worker only needs to read its own code and dial out; nothing it
+# does requires privilege, so a bug in the agent (or in a dependency) shouldn't
+# come with root in the container.
+RUN useradd --create-home --uid 10001 agent \
+    && chown -R agent:agent /app
+USER agent
+
 # Long-lived worker: it dials out to LiveKit and picks up each interview room.
 # (Turn-taking is push-to-talk, so no Silero VAD weights to pre-download.)
 CMD ["python", "main.py", "start"]
