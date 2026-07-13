@@ -14,6 +14,8 @@
     "test": "turbo run test",
     "knip": "knip",
     "eval": "pnpm --filter @maven-ai/evals eval",
+    "eval:sanity": "pnpm --filter @maven-ai/evals eval:sanity",
+    "eval:live": "pnpm --filter @maven-ai/evals eval:live",
     "db:generate": "pnpm --filter @maven-ai/db generate",
     "db:migrate": "pnpm --filter @maven-ai/db migrate",
     "db:push": "pnpm --filter @maven-ai/db push"
