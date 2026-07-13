@@ -10,6 +10,10 @@ export function ThemeToggle() {
 
   useEffect(() => {
     const current = document.documentElement.getAttribute("data-theme");
+    // Reading the theme the pre-paint script already applied. It can't be read during
+    // render (no document on the server), and starting at null is what keeps hydration
+    // from mismatching. Runs once on mount, so there's no cascading-render loop here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTheme(current === "dark" ? "dark" : "light");
   }, []);
 
