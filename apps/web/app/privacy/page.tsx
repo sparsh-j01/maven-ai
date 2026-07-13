@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { SUPPORT_EMAIL } from "@/lib/contact";
 
 // Baseline privacy policy written to what the app actually does (Clerk auth,
 // résumé text/PDF, interview audio + transcripts, Razorpay billing, the named
@@ -106,8 +107,7 @@ export default function PrivacyPage() {
               You can view your interviews and reports in your dashboard. You can
               request a copy of your data, or deletion of your account and its
               content, by emailing{" "}
-              <a className="text-teal hover:underline" href="mailto:sparshjjwala.work@gmail.com">
-                sparshjjwala.work@gmail.com
+              <a className="text-teal hover:underline" href={`mailto:${SUPPORT_EMAIL}`}>
               </a>{" "}
               or from the{" "}
               <Link className="text-teal hover:underline" href="/delete-account">
@@ -170,8 +170,7 @@ export default function PrivacyPage() {
           <Section title="Contact">
             <p>
               Questions about privacy? Email{" "}
-              <a className="text-teal hover:underline" href="mailto:sparshjjwala.work@gmail.com">
-                sparshjjwala.work@gmail.com
+              <a className="text-teal hover:underline" href={`mailto:${SUPPORT_EMAIL}`}>
               </a>
               .
             </p>

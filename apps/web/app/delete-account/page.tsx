@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
+import { mailto } from "@/lib/contact";
 
 // DEV NOTE: deletion is request-based today (email → we erase). When a
 // self-serve delete endpoint exists (Clerk user + DB cascade), swap the mailto
@@ -56,7 +57,10 @@ export default function DeleteAccountPage() {
             your account and we&apos;ll erase it and its data.
           </p>
           <a
-            href="mailto:sparshjjwala.work@gmail.com?subject=Delete%20my%20account&body=Please%20permanently%20delete%20my%20Maven%20account%20and%20all%20of%20its%20data."
+            href={mailto(
+              "Delete my account",
+              "Please permanently delete my Maven account and all of its data.",
+            )}
             className={`${buttonVariants({ variant: "accent" })} mt-5`}
           >
             Request account deletion

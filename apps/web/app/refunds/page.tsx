@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { SUPPORT_EMAIL } from "@/lib/contact";
 
 // Standard SaaS cancellation & refund policy — required by Razorpay for
 // activation. DEV NOTE: the 7-day money-back window is a business choice; adjust
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 };
 
 const UPDATED = "July 2026";
-const EMAIL = "sparshjjwala.work@gmail.com";
+const EMAIL = SUPPORT_EMAIL;
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
