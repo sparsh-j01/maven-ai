@@ -32,11 +32,30 @@ export async function POST(_req: Request) {
   const cycleRaw = jar.get("pref_cycle")?.value;
   const cycle = cycleRaw && isCycle(cycleRaw) ? cycleRaw : "monthly";
 
-  const annualPlan =
-    cycle === "annual" ? process.env.RAZORPAY_PLAN_ID_PRO_ANNUAL : undefined;
-  const planId = annualPlan || process.env.RAZORPAY_PLAN_ID_PRO!;
+  const annualPlan = process.env.RAZORPAY_PLAN_ID_PRO_ANNUAL;
+  // RAZORPAY_PLAN_ID_PRO_ANNUAL is optional, so "annual" can be selected while it's
+  // unset. Never quietly downgrade that to the monthly plan — the user asked to be
+  // billed once a year and would instead be charged every month. Fail loudly.
+  if (cycle === "annual" && !annualPlan) {
+    return new Response("Annual billing isn't available right now", {
+      status: 503,
+    });
+  }
+
+  const useAnnual = cycle === "annual";
+  const planId = useAnnual ? annualPlan! : process.env.RAZORPAY_PLAN_ID_PRO!;
   // total_count = billing cycles: ~10 years either way, just a long ceiling.
-  const totalCount = annualPlan ? 10 : 120;
-  const url = await createProSubscription(userId, planId, totalCount, email);
-  return Response.json({ url });
+  const totalCount = useAnnual ? 10 : 120;
+
+  try {
+    const url = await createProSubscription(userId, planId, totalCount, email);
+    return Response.json({ url });
+  } catch (err) {
+    // Razorpay rejected or is unreachable. Don't hand the user a bare 500 HTML page
+    // on the money path — the client reads text and can show it.
+    console.error("razorpay checkout failed", err);
+    return new Response("Couldn't reach checkout. Please try again.", {
+      status: 502,
+    });
+  }
 }
