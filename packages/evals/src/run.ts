@@ -77,7 +77,11 @@ async function main() {
         process.exit(1);
       }
     } catch (err) {
+      // A security gate that can't produce evidence has not passed. Unlike the
+      // quality cases above (where a transient API blip is tolerable), "we never
+      // checked the data-fence" must not exit 0.
       console.log(`✗ injection case failed to grade — ${(err as Error).message}`);
+      process.exit(1);
     }
   }
 }
