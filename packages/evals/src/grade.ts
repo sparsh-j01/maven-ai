@@ -23,7 +23,19 @@ const MODEL = MODELS.scorer;
 // budget it ships.
 const TIMEOUT_MS = SCORER_TIMEOUT_MS;
 
-export async function grade(input: ScorerInput): Promise<FeedbackReport> {
+// Production's grade step is an Inngest function with retries: 2 — a 429/503 blip
+// costs a retry, not the interview. Without the same retries here, a Gemini "high
+// demand" 503 failed the eval for a model production would have scored fine. Same
+// budget, same attempt count.
+const ATTEMPTS = 3;
+const transient = (status: number) => status === 429 || status >= 500;
+
+// One grading call, timed. ms is the wall time of the ATTEMPT THAT SUCCEEDED, not
+// of the retry chain — SCORER_TIMEOUT_MS aborts a single fetch, so a single fetch
+// is what has to fit inside it.
+export async function gradeTimed(
+  input: ScorerInput,
+): Promise<{ report: FeedbackReport; ms: number }> {
   const key = process.env.GOOGLE_API_KEY;
   if (!key) throw new Error("GOOGLE_API_KEY is not set — cannot grade");
 
@@ -39,26 +51,43 @@ export async function grade(input: ScorerInput): Promise<FeedbackReport> {
     },
   };
 
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: ctrl.signal,
-      },
-    );
-    if (!res.ok) throw new Error(`Gemini ${res.status}: ${await res.text()}`);
-    const json = (await res.json()) as {
-      candidates?: { content?: { parts?: { text?: string }[] } }[];
-    };
-    const text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error("Gemini returned no text");
-    return feedbackReport.parse(JSON.parse(text));
-  } finally {
-    clearTimeout(timer);
+  let lastErr: Error = new Error("no attempt ran");
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    const started = Date.now();
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: ctrl.signal,
+        },
+      );
+      if (!res.ok) {
+        const err = new Error(`Gemini ${res.status}: ${await res.text()}`);
+        if (!transient(res.status) || attempt === ATTEMPTS) throw err;
+        lastErr = err;
+      } else {
+        const json = (await res.json()) as {
+          candidates?: { content?: { parts?: { text?: string }[] } }[];
+        };
+        const text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) throw new Error("Gemini returned no text");
+        return { report: feedbackReport.parse(JSON.parse(text)), ms: Date.now() - started };
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+    // ponytail: fixed backoff, 2s then 4s. Exponential+jitter when a fleet of
+    // graders is hammering the same quota; one eval run is not that.
+    await new Promise((r) => setTimeout(r, 2000 * attempt));
   }
+  throw lastErr;
+}
+
+export async function grade(input: ScorerInput): Promise<FeedbackReport> {
+  return (await gradeTimed(input)).report;
 }

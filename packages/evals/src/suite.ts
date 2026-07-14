@@ -8,10 +8,18 @@ export type ScoreOutput = {
   communication: number; // 0–100: how clearly delivered, independent of both.
   evidence: string; // must be a verbatim span from the candidate's transcript
   claimAudit: { claim: string; verdict: "true" | "false"; why: string }[];
+  ms?: number; // wall time of the real grading call; unset for the offline fakes
 };
 
 export type Scorer = (input: ScorerInput) => ScoreOutput | Promise<ScoreOutput>;
-export type SuiteResult = { passed: boolean; failures: string[] };
+export type SuiteResult = {
+  passed: boolean;
+  failures: string[];
+  // The scores behind the verdict, so `eval:live --runs=N` can show the real
+  // grade latency (ScoreOutput.ms — SCORER_TIMEOUT_MS was a guess) and the
+  // run-to-run drift of the numbers the assertions rely on.
+  scores: Map<string, ScoreOutput>;
+};
 
 
 export async function runEvalSuite(scorer: Scorer): Promise<SuiteResult> {
@@ -107,7 +115,7 @@ export async function runEvalSuite(scorer: Scorer): Promise<SuiteResult> {
     );
   }
 
-  return { passed: failures.length === 0, failures };
+  return { passed: failures.length === 0, failures, scores: out };
 }
 // ── Scorers under test ──────────────────────────────────────────────────────
 
@@ -200,8 +208,8 @@ export const oracleScorer: Scorer = (input) => {
 // fakes — so runEvalSuite needs an async path. Fails loudly on a missing field
 // rather than letting `undefined < 40` fail three assertions later.
 export async function geminiScorer(input: ScorerInput): Promise<ScoreOutput> {
-  const { grade } = await import("./grade");
-  const r = await grade(input);
+  const { gradeTimed } = await import("./grade");
+  const { report: r, ms } = await gradeTimed(input);
   if (
     r.correctness === undefined ||
     r.completeness === undefined ||
@@ -218,5 +226,6 @@ export async function geminiScorer(input: ScorerInput): Promise<ScoreOutput> {
     communication: r.deliveryScore,
     evidence: r.evidence,
     claimAudit: r.claimAudit ?? [],
+    ms,
   };
 }
