@@ -46,3 +46,6 @@ skills-lock.json
 
 # ── browser automation artifacts (Playwright MCP / screenshots) ──
 .playwright-mcp/
+
+# ── monaco (self-hosted; staged into public/ at build by scripts/copy-monaco.mjs) ──
+apps/web/public/monaco/

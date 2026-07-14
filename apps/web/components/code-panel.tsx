@@ -1,6 +1,6 @@
 "use client";
 
-import Editor from "@monaco-editor/react";
+import Editor, { loader } from "@monaco-editor/react";
 import {
   type CodingProblem,
   type Language,
@@ -13,6 +13,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // The candidate's Monaco editor. The buffer is broadcast to the agent over the
 // data channel; the agent owns run_code and grades server-side — nothing here is
 // trusted as a control signal.
+
+// Serve Monaco from our own origin. Left alone, @monaco-editor/loader injects a
+// <script src="https://cdn.jsdelivr.net/..."> into the page, and script-src doesn't
+// list jsdelivr — so the browser blocks it and the editor silently never mounts.
+// scripts/copy-monaco.mjs stages the assets into public/ at build.
+loader.config({ paths: { vs: "/monaco/vs" } });
 
 type RunResult = {
   ok: boolean;
@@ -42,6 +48,12 @@ export function CodePanel({
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<RunResult | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The buffer starts pre-filled with the starter template, and the broadcast below
+  // doesn't care whether a human ever saw an editor. So if Monaco fails to mount, we
+  // would ship that untouched stub to the agent, Judge0 would run it perfectly, and
+  // the candidate would be graded down for a round they could not type into. Publish
+  // nothing until the editor is actually there to type in.
+  const [editorReady, setEditorReady] = useState(false);
 
   const [editorTheme, setEditorTheme] = useState<"vs" | "vs-dark">("vs-dark");
   useEffect(() => {
@@ -60,12 +72,13 @@ export function CodePanel({
 
   // Broadcast the buffer (debounced) so run_code grades the freshest code.
   useEffect(() => {
+    if (!editorReady) return;
     const t = setTimeout(
       () => publish(room, { type: "code", language, code }),
       400,
     );
     return () => clearTimeout(t);
-  }, [room, language, code]);
+  }, [room, language, code, editorReady]);
 
   useEffect(() => {
     const onData = (
@@ -150,6 +163,7 @@ export function CodePanel({
           theme={editorTheme}
           language={language}
           value={code}
+          onMount={() => setEditorReady(true)}
           onChange={(v) =>
             setCodeByLang((prev) => ({ ...prev, [language]: v ?? "" }))
           }
