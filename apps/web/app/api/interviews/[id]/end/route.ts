@@ -9,6 +9,12 @@ import { inngest } from "@/lib/inngest";
 // interview stuck `live` with no report. Natural completion and the time cap
 // already finalize agent-side (§4.3) — this only covers the user-initiated exit.
 // Idempotent + ownership-scoped (no IDOR).
+// One rule for every exit below. The client redirects on `scored` (report page vs
+// dashboard), so an interview that was handed back as `approved` must not be reported
+// as scored — that sends the candidate to a report which will never exist.
+const NOT_SCORED = ["requested", "approved", "provisioning", "live"];
+const scoredFor = (status: string) => !NOT_SCORED.includes(status);
+
 export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -18,16 +24,26 @@ export async function POST(
 
   const { id } = await params;
   const db = getDb();
+  const owned = and(eq(interviews.id, id), eq(interviews.userId, userId));
+
+  // Every status write below is conditional, so a loser needs the truth, not a guess.
+  const readStatus = async (): Promise<string> => {
+    const [row] = await db
+      .select({ status: interviews.status })
+      .from(interviews)
+      .where(owned);
+    return row?.status ?? "failed";
+  };
 
   const [iv] = await db
     .select({ status: interviews.status })
     .from(interviews)
-    .where(and(eq(interviews.id, id), eq(interviews.userId, userId)));
+    .where(owned);
   if (!iv) return new Response("Not found", { status: 404 });
 
   // Already finalized (natural end / cap / a prior leave): report it as-is.
   if (iv.status !== "live" && iv.status !== "provisioning") {
-    return Response.json({ status: iv.status, scored: iv.status !== "live" });
+    return Response.json({ status: iv.status, scored: scoredFor(iv.status) });
   }
 
   // Only score if the candidate actually spoke — no empty reports from a room
@@ -49,17 +65,18 @@ export async function POST(
     //
     // Hand it back instead: `approved` is unbilled (UNBILLED_STATUSES), and the token
     // route already lets an `approved` interview join again — so "retry" just works.
-    await db
+    //
+    // Conditional, and checked: the agent can finalize server-side between our read and
+    // this write, in which case we matched zero rows and the row is being scored. Saying
+    // "approved, not scored" then would be a lie the client acts on.
+    const reset = await db
       .update(interviews)
       .set({ status: "approved" })
-      .where(
-        and(
-          eq(interviews.id, id),
-          eq(interviews.userId, userId),
-          inArray(interviews.status, ["live", "provisioning"]),
-        ),
-      );
-    return Response.json({ status: "approved", scored: false });
+      .where(and(owned, inArray(interviews.status, ["live", "provisioning"])))
+      .returning({ status: interviews.status });
+
+    const status = reset[0]?.status ?? (await readStatus());
+    return Response.json({ status, scored: scoredFor(status) });
   }
 
   // The status check above and this write are two round-trips, so a double-click on
@@ -70,18 +87,15 @@ export async function POST(
   const won = await db
     .update(interviews)
     .set({ status: "processing", endedAt: sql`now()` })
-    .where(
-      and(
-        eq(interviews.id, id),
-        eq(interviews.userId, userId),
-        inArray(interviews.status, ["live", "provisioning"]),
-      ),
-    )
+    .where(and(owned, inArray(interviews.status, ["live", "provisioning"])))
     .returning({ id: interviews.id });
 
   if (won.length === 0) {
-    // Someone else finalized between our read and our write.
-    return Response.json({ status: "processing", scored: true });
+    // Someone else finalized between our read and our write. It's usually `processing`,
+    // but a racing no-speech leave could have handed the row back as `approved` — so
+    // read it rather than assuming.
+    const status = await readStatus();
+    return Response.json({ status, scored: scoredFor(status) });
   }
 
   await inngest.send({ name: "interview/ended", data: { interviewId: id } });
