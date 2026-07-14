@@ -40,9 +40,15 @@ jobs:
       # path is a symlink to the repo-root .env, but the symlink is gitignored and so
       # doesn't exist on a fresh checkout — a root .env here would never be read.
       # Build-time-only, non-secret dummies; no real auth happens during a build.
+      # NEXT_PUBLIC_SITE_URL is written DELIBERATELY BLANK. That is the shape
+      # .env.example ships and the shape a half-filled Vercel project has, and it is the
+      # one input that separates `??` from `||`: unset, both fall back and the build is
+      # green; declared-but-empty, `??` passes "" through to new URL("") and the build
+      # dies. CI used to omit the line entirely, so a revert of that fix would have
+      # shipped green and only detonated on a real deploy. Now `next build` is the test.
       - name: Build web
         run: |
-          printf 'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk\nCLERK_SECRET_KEY=sk_test_ci\n' > apps/web/.env
+          printf 'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk\nCLERK_SECRET_KEY=sk_test_ci\nNEXT_PUBLIC_SITE_URL=\n' > apps/web/.env
           pnpm --filter @maven-ai/web build
 
   # The Python grader is the other half of coding-round correctness and was
