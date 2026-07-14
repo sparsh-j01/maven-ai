@@ -39,8 +39,22 @@ export const SCORER_TEMPERATURE = Number.isFinite(rawTemp) ? rawTemp : 0;
 // invocation — otherwise there's no clean error to retry, just a dead request. 45s
 // leaves room for the DB write after the call returns.
 //
-// It is still a guess, not a measurement. `pnpm eval:live` prints the real duration:
-// once you have it, set this from that number.
+// It is still a guess, not a measurement. `pnpm eval:live --runs=3` prints the real
+// duration: once you have it, set this from that number.
+//
+// The override is clamped, not trusted: SCORER_TIMEOUT_MS=90000 would let the abort
+// fire AFTER Vercel has already killed the 60s invocation (maxDuration in
+// api/inngest/route.ts) — no clean error to retry, just a dead request. The ceiling is
+// the thing this timeout exists to stay under.
+const ROUTE_LIMIT_MS = 60_000; // maxDuration in apps/web/app/api/inngest/route.ts
+const CEILING_MS = 50_000; // leaves ~10s for the DB write after the call returns
 const rawTimeout = Number(env("SCORER_TIMEOUT_MS", "45000"));
 export const SCORER_TIMEOUT_MS =
-  Number.isFinite(rawTimeout) && rawTimeout > 0 ? rawTimeout : 45_000;
+  Number.isFinite(rawTimeout) && rawTimeout > 0
+    ? Math.min(rawTimeout, CEILING_MS)
+    : 45_000;
+if (rawTimeout > CEILING_MS) {
+  console.warn(
+    `SCORER_TIMEOUT_MS=${rawTimeout} exceeds the ${ROUTE_LIMIT_MS}ms route limit — clamped to ${CEILING_MS}`,
+  );
+}
