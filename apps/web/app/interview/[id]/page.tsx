@@ -90,6 +90,9 @@ export default function InterviewRoomPage() {
     let cancelled = false;
     // Armed once the candidate is in; disarmed the moment the agent shows up.
     let agentWatchdog: ReturnType<typeof setTimeout> | null = null;
+    // The watchdog leaves the room on purpose, so its own disconnect must not be
+    // mistaken for the candidate dropping out — it owns the terminal state.
+    let watchdogFired = false;
     const disarmWatchdog = () => {
       if (agentWatchdog) clearTimeout(agentWatchdog);
       agentWatchdog = null;
@@ -100,7 +103,7 @@ export default function InterviewRoomPage() {
     // A normal end tears the room down ~0.5s after the "ended" frame arrives;
     // that teardown must not clobber the "ended" screen (and its report link).
     const onDisconnected = () =>
-      setState((s) => (s === "ended" ? s : "disconnected"));
+      setState((s) => (s === "ended" || watchdogFired ? s : "disconnected"));
     // Autoplay gate: keep the "enable sound" button in sync with playback state.
     const onAudioStatus = () => setAudioBlocked(!room.canPlaybackAudio);
     // The agent signals over the data channel: {type:"ended"} when it ends the
@@ -160,20 +163,36 @@ export default function InterviewRoomPage() {
         if (room.remoteParticipants.size === 0) {
           agentWatchdog = setTimeout(() => {
             if (cancelled || room.remoteParticipants.size > 0) return;
-            // Hand the interview back: nobody spoke, so /end resets it to `approved`,
-            // which is unbilled and re-joinable. Without this the row sits `live`
-            // forever and the candidate is charged for silence. Best-effort — the
-            // failure state shows either way.
-            void fetch(`/api/interviews/${id}/end`, { method: "POST" }).catch(
-              () => {},
-            );
-            setDetail(
-              "your interviewer didn't join, so the interview service looks down. Nothing was recorded and this doesn't count against your monthly interviews — retry in a moment.",
-            );
-            // Don't stomp a room that already finished or dropped on its own.
-            setState((s) =>
-              s === "ended" || s === "disconnected" ? s : "error",
-            );
+            watchdogFired = true;
+            void (async () => {
+              // Leave before showing the failure. An agent that turns up late would
+              // otherwise start talking over the error screen, and a room nobody is
+              // in still burns LiveKit minutes.
+              await room.disconnect().catch(() => {});
+              // Hand the interview back: nobody spoke, so /end resets it to
+              // `approved`, which is unbilled and re-joinable. Without this the row
+              // sits `live` forever and the candidate is charged for silence.
+              let released = false;
+              try {
+                const res = await fetch(`/api/interviews/${id}/end`, {
+                  method: "POST",
+                });
+                released = res.ok;
+              } catch {
+                /* released stays false */
+              }
+              if (cancelled) return;
+              // Only promise "unbilled" when /end confirmed it. Billing charges at
+              // interview START, so saying this on a failed request tells the
+              // candidate they weren't charged when in fact they were.
+              setDetail(
+                released
+                  ? "your interviewer didn't join, so the interview service looks down. Nothing was recorded and this doesn't count against your monthly interviews — retry in a moment."
+                  : "your interviewer didn't join, so the interview service looks down. Nothing was recorded, but we couldn't confirm this interview was released — if it still shows as used, retry in a moment.",
+              );
+              // Don't stomp a room that already finished on its own.
+              setState((s) => (s === "ended" ? s : "error"));
+            })();
           }, AGENT_JOIN_TIMEOUT_MS);
         }
         // Try to unblock the interviewer's voice now; if the browser refuses
