@@ -39,20 +39,31 @@ export const SCORER_TEMPERATURE = Number.isFinite(rawTemp) ? rawTemp : 0;
 // invocation — otherwise there's no clean error to retry, just a dead request. 45s
 // leaves room for the DB write after the call returns.
 //
-// It is still a guess, not a measurement. `pnpm eval:live --runs=3` prints the real
-// duration: once you have it, set this from that number.
+// MEASURED, finally (`pnpm eval:live --runs=3`, 2026-07-14, gemini-2.5-flash, n=15):
+//   median 22.7s, max 32.8s, and the per-run worst case was 30.9 / 31.6 / 32.8s.
+// The old 30s production timeout was BELOW the typical worst case — it was aborting
+// grades that were about to succeed and telling the candidate their interview failed.
 //
-// The override is clamped, not trusted: SCORER_TIMEOUT_MS=90000 would let the abort
-// fire AFTER Vercel has already killed the 60s invocation (maxDuration in
-// api/inngest/route.ts) — no clean error to retry, just a dead request. The ceiling is
-// the thing this timeout exists to stay under.
+// 50s, not 45s: the measurement leaves less headroom than the guess implied (45s was
+// only 1.4× the slowest grade), and 50s is all the room there is — the Vercel function
+// running the scorer is capped at 60s (maxDuration in api/inngest/route.ts) and the
+// abort must fire BEFORE the platform kills the invocation, or there's no clean error
+// to retry, just a dead request. That's a ceiling, not a comfortable margin.
+//
+// Two things this number does NOT cover, both worth knowing before trusting it:
+//   1. The eval grades the FREE schema. Production adds a studyPlan for Pro users
+//      (feedbackSchemaFor in score-interview.ts) — strictly more output, so strictly
+//      slower. 32.8s is a floor for the Pro path, not a ceiling.
+//   2. Real transcripts run longer than the fixtures.
+// If Pro grades start timing out, the fix isn't a bigger number — it's a bigger
+// budget, i.e. the scorer moves off the 60s function.
 const ROUTE_LIMIT_MS = 60_000; // maxDuration in apps/web/app/api/inngest/route.ts
-const CEILING_MS = 50_000; // leaves ~10s for the DB write after the call returns
-const rawTimeout = Number(env("SCORER_TIMEOUT_MS", "45000"));
+const CEILING_MS = 50_000; // abort must beat ROUTE_LIMIT_MS with room to return
+const rawTimeout = Number(env("SCORER_TIMEOUT_MS", "50000"));
 export const SCORER_TIMEOUT_MS =
   Number.isFinite(rawTimeout) && rawTimeout > 0
     ? Math.min(rawTimeout, CEILING_MS)
-    : 45_000;
+    : CEILING_MS;
 if (rawTimeout > CEILING_MS) {
   console.warn(
     `SCORER_TIMEOUT_MS=${rawTimeout} exceeds the ${ROUTE_LIMIT_MS}ms route limit — clamped to ${CEILING_MS}`,
