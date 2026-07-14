@@ -53,7 +53,9 @@ export const SCORER_TEMPERATURE = Number.isFinite(rawTemp) ? rawTemp : 0;
 // Two things this number does NOT cover, both worth knowing before trusting it:
 //   1. The eval grades the FREE schema. Production adds a studyPlan for Pro users
 //      (feedbackSchemaFor in score-interview.ts) — strictly more output, so strictly
-//      slower. 32.8s is a floor for the Pro path, not a ceiling.
+//      slower. 32.8s is the observed max of those 15 free-schema runs and nothing
+//      more; it is not a bound of any kind on the Pro path. Pro tail latency has
+//      never been measured. Measure it before trusting this number for Pro.
 //   2. Real transcripts run longer than the fixtures.
 // If Pro grades start timing out, the fix isn't a bigger number — it's a bigger
 // budget, i.e. the scorer moves off the 60s function.
@@ -66,6 +68,6 @@ export const SCORER_TIMEOUT_MS =
     : CEILING_MS;
 if (rawTimeout > CEILING_MS) {
   console.warn(
-    `SCORER_TIMEOUT_MS=${rawTimeout} exceeds the ${ROUTE_LIMIT_MS}ms route limit — clamped to ${CEILING_MS}`,
+    `SCORER_TIMEOUT_MS=${rawTimeout} exceeds the ${CEILING_MS}ms scorer ceiling (route limit ${ROUTE_LIMIT_MS}ms) — clamped to ${CEILING_MS}`,
   );
 }
