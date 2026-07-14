@@ -1,3 +1,4 @@
+import { RUBRIC_DIMENSIONS } from "@maven-ai/shared";
 import { SCORER_TIMEOUT_MS } from "@maven-ai/shared/models";
 import { geminiScorer, runEvalSuite, type SuiteResult } from "./suite";
 
@@ -21,10 +22,16 @@ async function main() {
     process.exit(1);
   }
 
-  const runs = Math.max(
-    1,
-    Number(process.argv.find((a) => a.startsWith("--runs="))?.split("=")[1] ?? 1),
-  );
+  // Validate, don't coerce: Math.max(1, Number("thre")) is NaN, which runs the loop
+  // ZERO times — and an empty results array makes every().passed vacuously true. A
+  // typo would have printed "passes all checks" without grading anything. A gate that
+  // can pass without running is worse than no gate.
+  const raw = process.argv.find((a) => a.startsWith("--runs="))?.split("=")[1];
+  const runs = raw === undefined ? 1 : Number(raw);
+  if (!Number.isInteger(runs) || runs < 1) {
+    console.error(`--runs must be a positive integer (got "${raw}")`);
+    process.exit(1);
+  }
 
   console.log(
     `Running the real grader through the suite ${runs}× (${runs * 5} API calls)...\n`,
@@ -58,24 +65,57 @@ async function main() {
   }
 
   // ── S7: do the scores hold still across identical runs? ──────────────────
-  // Anchored scores (correctness = 100 − 20×false_claims) should be flat by
-  // construction; vibe scores (completeness) are the ones that drift. A spread
-  // wide enough to cross an assertion margin shows up as a run that fails above.
+  // Anchored scores (correctness = 100 − 20×false_claims) are flat by construction.
+  // Everything else has to be shown, not assumed — including overallScore and the
+  // rubric dims, which is what the CANDIDATE reads. A number that swings 40 points on
+  // identical input isn't a score, it's a coin flip with a decimal point.
   if (runs > 1) {
-    console.log(`\nstability (min–max over ${runs} runs)`);
+    const spread = (vals: number[]) => {
+      const lo = Math.min(...vals);
+      const hi = Math.max(...vals);
+      return { lo, hi, moved: lo !== hi, text: lo === hi ? `${lo}` : `${lo}–${hi} ⚠` };
+    };
+    const at = (i: number, name: string) => results[i]!.scores.get(name)!;
+
+    console.log(`\nstability (min–max over ${runs} runs, ⚠ = moved on identical input)`);
+    let worstOverall = 0;
+    let movedOverall = 0;
+
     for (const name of results[0]!.scores.keys()) {
-      const cols = AXES.map((axis) => {
-        const vals = results.map((r) => r.scores.get(name)![axis]);
-        const lo = Math.min(...vals);
-        const hi = Math.max(...vals);
-        return `${axis} ${lo === hi ? `${lo}` : `${lo}–${hi} ⚠`}`.padEnd(24);
-      });
-      console.log(`  ${name.padEnd(26)}${cols.join("")}`);
+      const idx = results.map((_, i) => i);
+      const overall = spread(idx.map((i) => at(i, name).overall ?? -1));
+      if (overall.moved) movedOverall++;
+      worstOverall = Math.max(worstOverall, overall.hi - overall.lo);
+
+      const axes = AXES.map((axis) =>
+        `${axis} ${spread(idx.map((i) => at(i, name)[axis])).text}`.padEnd(23),
+      );
+      console.log(
+        `  ${name.padEnd(26)}OVERALL ${overall.text.padEnd(12)}${axes.join("")}`,
+      );
+
+      const drifted = RUBRIC_DIMENSIONS.map((d) => ({
+        d,
+        s: spread(idx.map((i) => at(i, name).rubric?.[d] ?? -1)),
+      })).filter((x) => x.s.moved);
+      console.log(
+        drifted.length
+          ? `  ${" ".repeat(26)}rubric drift: ${drifted.map((x) => `${x.d} ${x.s.text}`).join(", ")}`
+          : `  ${" ".repeat(26)}rubric: flat`,
+      );
     }
-    console.log("  (⚠ = moved between identical runs)");
+
+    // The headline: the score on the report is the product. Everything else is
+    // diagnostics for why it moved.
+    console.log(
+      `\noverallScore moved on ${movedOverall}/${results[0]!.scores.size} cases` +
+        `, worst swing ${worstOverall} points on identical input`,
+    );
   }
 
-  const passed = results.every((r) => r.passed);
+  // results.length > 0 is belt-and-braces on the same failure: never exit 0 without
+  // having actually graded something.
+  const passed = results.length > 0 && results.every((r) => r.passed);
   console.log(
     passed
       ? `\n✓ real grader passes all checks${runs > 1 ? ` in all ${runs} runs` : ""}`

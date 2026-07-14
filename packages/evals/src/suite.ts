@@ -1,4 +1,4 @@
-import type { ScorerInput } from "@maven-ai/shared";
+import type { RubricDimension, ScorerInput } from "@maven-ai/shared";
 import { CASES, byName, candidateText } from "./fixtures";
 
 
@@ -9,6 +9,11 @@ export type ScoreOutput = {
   evidence: string; // must be a verbatim span from the candidate's transcript
   claimAudit: { claim: string; verdict: "true" | "false"; why: string }[];
   ms?: number; // wall time of the real grading call; unset for the offline fakes
+  // The numbers the CANDIDATE actually reads. They aren't derived from the three
+  // axes above — the model emits them free-form — so their stability is a separate
+  // question, and it's the one that decides whether a report can be trusted.
+  overall?: number; // 0–100, the headline score on the report
+  rubric?: Partial<Record<RubricDimension, number>>; // 0–10, the radar axes
 };
 
 export type Scorer = (input: ScorerInput) => ScoreOutput | Promise<ScoreOutput>;
@@ -227,5 +232,7 @@ export async function geminiScorer(input: ScorerInput): Promise<ScoreOutput> {
     evidence: r.evidence,
     claimAudit: r.claimAudit ?? [],
     ms,
+    overall: r.overallScore,
+    rubric: r.rubricScores,
   };
 }

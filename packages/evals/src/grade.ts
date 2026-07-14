@@ -30,6 +30,11 @@ const TIMEOUT_MS = SCORER_TIMEOUT_MS;
 const ATTEMPTS = 3;
 const transient = (status: number) => status === 429 || status >= 500;
 
+// A 400/403/404 is a bug in the request — the same call will fail the same way three
+// times. Everything else that throws (a reset connection, our own abort, a truncated
+// body that won't JSON.parse) is weather, and production's Inngest retry rides it out.
+class PermanentError extends Error {}
+
 // One grading call, timed. ms is the wall time of the ATTEMPT THAT SUCCEEDED, not
 // of the retry chain — SCORER_TIMEOUT_MS aborts a single fetch, so a single fetch
 // is what has to fit inside it.
@@ -67,23 +72,30 @@ export async function gradeTimed(
         },
       );
       if (!res.ok) {
-        const err = new Error(`Gemini ${res.status}: ${await res.text()}`);
-        if (!transient(res.status) || attempt === ATTEMPTS) throw err;
-        lastErr = err;
-      } else {
-        const json = (await res.json()) as {
-          candidates?: { content?: { parts?: { text?: string }[] } }[];
-        };
-        const text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!text) throw new Error("Gemini returned no text");
-        return { report: feedbackReport.parse(JSON.parse(text)), ms: Date.now() - started };
+        const msg = `Gemini ${res.status}: ${await res.text()}`;
+        throw transient(res.status) ? new Error(msg) : new PermanentError(msg);
       }
+      const json = (await res.json()) as {
+        candidates?: { content?: { parts?: { text?: string }[] } }[];
+      };
+      const text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) throw new Error("Gemini returned no text");
+      return {
+        report: feedbackReport.parse(JSON.parse(text)),
+        ms: Date.now() - started,
+      };
+    } catch (e) {
+      // Everything transient lands here and spends one attempt: a 503, a dropped
+      // socket, our own TIMEOUT_MS abort, a body that came back half-written. Only a
+      // permanent HTTP status skips the budget — retrying a 400 just fails slower.
+      if (e instanceof PermanentError) throw e;
+      lastErr = e as Error;
     } finally {
       clearTimeout(timer);
     }
     // ponytail: fixed backoff, 2s then 4s. Exponential+jitter when a fleet of
     // graders is hammering the same quota; one eval run is not that.
-    await new Promise((r) => setTimeout(r, 2000 * attempt));
+    if (attempt < ATTEMPTS) await new Promise((r) => setTimeout(r, 2000 * attempt));
   }
   throw lastErr;
 }
