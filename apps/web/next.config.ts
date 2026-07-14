@@ -9,7 +9,16 @@ function clerkHost(): string {
     const host = Buffer.from(b64, "base64").toString("utf8").replace(/\$+$/, "").trim();
     if (/^[a-z0-9.-]+$/i.test(host)) return host;
   } catch {
-    /* fall through to the dev wildcard */
+    /* fall through */
+  }
+  // connect-src is now derived from this too, not just script-src and frame-src. So a
+  // key that's missing or unparseable at BUILD time no longer degrades one directive —
+  // it points all three at the wrong Clerk origin and takes auth out entirely, with no
+  // build error and nothing but console CSP violations to explain it. Fail loudly.
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is missing or unparseable — refusing to build a CSP that would silently break Clerk auth.",
+    );
   }
   return "*.clerk.accounts.dev";
 }
@@ -50,7 +59,13 @@ function contentSecurityPolicy(): string {
   const dev = process.env.NODE_ENV !== "production";
   const directives = [
     "default-src 'self'",
-    `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""} https://${clerk} https://challenges.cloudflare.com`,
+    // Monaco is self-hosted (public/monaco, staged by scripts/copy-monaco.mjs), so
+    // 'self' covers both its loader and the worker's importScripts — no CDN needed.
+    // *.i.posthog.com is here as well as in connect-src: posthog-js lazy-loads
+    // recorder.js / surveys.js as SCRIPT tags from the assets host, and those are
+    // enabled by a toggle in the PostHog dashboard, not by a code change — so without
+    // this the CSP is fine right up until someone flips session replay on.
+    `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""} https://${clerk} https://challenges.cloudflare.com https://*.i.posthog.com`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
