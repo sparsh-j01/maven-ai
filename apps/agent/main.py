@@ -41,6 +41,7 @@ from coding import LANGUAGE_IDS, TESTS, cases_for, grade, run_on_judge0
 from models import AGENT_LLM_MODEL, STT_MODEL, TTS_MODEL
 from plan_walker import PlanWalker
 from prompt_context import context_block, keyterms
+from session_cap import enforce_time_cap
 from telemetry import setup_langfuse
 
 # Coding-round guards (F1/F3, §8.1): cap submission size and the number of runs
@@ -665,39 +666,19 @@ async def entrypoint(ctx: JobContext) -> None:
     # Hard spend cap (§8.1): MAX_SESSION_MIN after the candidate joins, end the
     # session no matter what so the voice loop can't burn provider minutes
     # indefinitely. Cancelled in end_interview when the plan finishes first.
-    async def _enforce_time_cap() -> None:
-        try:
-            # Warn first, then run out the rest of the clock. The cap used to fire cold:
-            # a candidate mid-DSA-problem was cut off with no warning and graded on the
-            # fragment. Now the interviewer gets two minutes to land the question and
-            # close properly.
-            await asyncio.sleep(MAX_SESSION_SECONDS - WARN_BEFORE_SECONDS)
-            # The plan may already have finished — end_interview leaves this task armed
-            # on purpose (see its comment), so _ended is the guard. Telling a finished
-            # interview to "wrap up" would talk over a closed session.
-            if not agent._ended:
-                logger.info(
-                    "interview %s — %ds left, telling the interviewer to wrap up",
-                    interview_id,
-                    WARN_BEFORE_SECONDS,
-                )
-                await session.generate_reply(instructions=_time_warning())
-            await asyncio.sleep(WARN_BEFORE_SECONDS)
-        except asyncio.CancelledError:
-            return
-        logger.info("interview %s hit the %d-min cap — ending", interview_id, MAX_SESSION_MIN)
-        await agent._finalize("time cap")
-        await asyncio.sleep(0.5)  # let the reliable "ended" frame reach the browser
-        try:
-            await session.aclose()  # stop STT/LLM/TTS billing
-        except Exception:
-            logger.exception("session close on cap failed")
-        try:
-            await ctx.delete_room()  # disconnect + close the room (stops SFU minutes)
-        except Exception:
-            logger.exception("room delete on cap failed")
-
-    agent._cap_task = asyncio.create_task(_enforce_time_cap())
+    # Lives in session_cap.py so it can be tested without LiveKit — see the tests
+    # for the "warning blows up, cap still fires" case that used to be a live bug.
+    agent._cap_task = asyncio.create_task(
+        enforce_time_cap(
+            agent,
+            session,
+            ctx,
+            interview_id,
+            warning=_time_warning(),
+            total_s=MAX_SESSION_SECONDS,
+            warn_s=WARN_BEFORE_SECONDS,
+        )
+    )
 
     await session.generate_reply(instructions=_opening(resuming))
 
