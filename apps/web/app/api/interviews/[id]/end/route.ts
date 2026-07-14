@@ -42,7 +42,24 @@ export async function POST(
       ),
     );
   if ((spoke?.count ?? 0) === 0) {
-    return Response.json({ status: iv.status, scored: false });
+    // Nobody said anything, so no interview happened. This used to return with the row
+    // left `live` — which stranded it live forever AND spent a monthly slot on nothing.
+    // The worst case was an agent outage: the candidate joins, no interviewer ever
+    // shows up, they give up, and they've been charged for silence.
+    //
+    // Hand it back instead: `approved` is unbilled (UNBILLED_STATUSES), and the token
+    // route already lets an `approved` interview join again — so "retry" just works.
+    await db
+      .update(interviews)
+      .set({ status: "approved" })
+      .where(
+        and(
+          eq(interviews.id, id),
+          eq(interviews.userId, userId),
+          inArray(interviews.status, ["live", "provisioning"]),
+        ),
+      );
+    return Response.json({ status: "approved", scored: false });
   }
 
   // The status check above and this write are two round-trips, so a double-click on

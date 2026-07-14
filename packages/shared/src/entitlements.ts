@@ -25,3 +25,28 @@ export function monthStart(now: Date = new Date()): Date {
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0),
   );
 }
+
+// Statuses that do NOT consume monthly quota.
+//
+// The rule: you are billed when the interview actually STARTS (live → processing →
+// ready), not when it is granted. Unbilled:
+//   requested — an admin never approved it
+//   approved  — granted, but never taken (e.g. the agent worker was down, so the room
+//               was silent and the candidate gave up; api/interviews/[id]/end hands it
+//               back to `approved` when nobody spoke)
+//   failed    — it broke on our side
+//
+// Without this, the gate counted every row created this month: a free user who
+// requested three interviews an admin never approved had spent their whole month on
+// nothing, and a scorer outage spent it for them.
+//
+// Anything unrecognised is BILLED — fail closed, so a new status can never quietly
+// hand out free interviews.
+//
+// Enforcement (api/interviews) and the dashboard's "used this month" both read this,
+// so the number the user sees is the number the gate applies.
+export const UNBILLED_STATUSES = ["requested", "approved", "failed"] as const;
+
+export function consumesQuota(status: string): boolean {
+  return !(UNBILLED_STATUSES as readonly string[]).includes(status);
+}

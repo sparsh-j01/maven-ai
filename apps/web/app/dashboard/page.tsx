@@ -7,8 +7,8 @@ import {
   subscriptions,
   users,
 } from "@maven-ai/db";
-import { monthStart, PLAN_LIMITS } from "@maven-ai/shared";
-import { desc, eq } from "drizzle-orm";
+import { monthStart, PLAN_LIMITS, UNBILLED_STATUSES } from "@maven-ai/shared";
+import { and, desc, eq, gte, notInArray, sql } from "drizzle-orm";
 import Link from "next/link";
 import { TopBar } from "@/components/top-bar";
 import { buttonVariants } from "@/components/ui/button";
@@ -43,6 +43,28 @@ const SENIORITY_LABEL: Record<string, string> = {
   sde3: "SDE 3",
 };
 const fmtSeniority = (s: string) => SENIORITY_LABEL[s] ?? s;
+
+// The same rule the gate applies (api/interviews), as its own count — NOT derived
+// from the row list below, which is capped at 20 and would silently undercount.
+// Two sources of truth for one number is how a user gets told "1 of 3 used" and then
+// refused at 2.
+async function billableThisMonth(userId: string): Promise<number> {
+  try {
+    const [row] = await getDb()
+      .select({ count: sql<number>`count(*)::int` })
+      .from(interviews)
+      .where(
+        and(
+          eq(interviews.userId, userId),
+          gte(interviews.createdAt, monthStart()),
+          notInArray(interviews.status, [...UNBILLED_STATUSES]),
+        ),
+      );
+    return row?.count ?? 0;
+  } catch {
+    return 0; // same posture as listInterviews: an unreachable DB still renders the shell
+  }
+}
 
 async function listInterviews(userId: string) {
   // Tolerate an unreachable/un-migrated DB so the shell still renders.
@@ -107,10 +129,7 @@ export default async function DashboardPage({
   const isPro = plan === "pro";
   const cancelling = subStatus === "cancelling";
 
-  const start = monthStart();
-  const usedThisMonth = rows.filter(
-    (r) => r.createdAt && r.createdAt >= start,
-  ).length;
+  const usedThisMonth = userId ? await billableThisMonth(userId) : 0;
 
   // Score trend: oldest → newest; only drawn with 2+ real scores.
   const trend = rows
