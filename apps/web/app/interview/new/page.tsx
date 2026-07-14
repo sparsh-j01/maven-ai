@@ -6,6 +6,7 @@ import {
   type InterviewType,
   type Seniority,
   PLAN_LIMITS,
+  errorMessage,
   seniorityDifficulty,
 } from "@maven-ai/shared";
 import { FileText, Loader2, Upload } from "lucide-react";
@@ -15,7 +16,6 @@ import { useState } from "react";
 import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { errorMessage } from "@/lib/http";
 import { UpgradeButton } from "@/components/upgrade-button";
 import { cn } from "@/lib/utils";
 
