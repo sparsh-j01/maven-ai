@@ -63,9 +63,23 @@ export async function cancelSubscription(subId: string): Promise<void> {
       body: JSON.stringify({ cancel_at_cycle_end: 1 }),
     },
   );
-  if (!res.ok) {
-    throw new Error(`Razorpay ${res.status}: ${await res.text()}`);
-  }
+  if (res.ok) return;
+  // A cancel Razorpay has ALREADY processed is a success, not a failure.
+  //
+  // Without this, the 10s abort above strands the user forever. Razorpay accepts the
+  // cancel but answers slowly, we abort, the route 502s and never writes
+  // status="cancelling" — so its own double-cancel guard never arms. The user retries,
+  // we POST cancel again, Razorpay 400s because it is already cancelled, we throw, the
+  // route 502s again. Forever. They are told to try again for a cancellation that
+  // worked the first time, while the dashboard still shows them subscribed.
+  //
+  // ponytail: ANY 400 here is read as already-cancelled. Razorpay 400s a cancel it
+  // can't act on, and "already cancelled" is overwhelmingly why. If it ever 400s for
+  // another reason we'd mark the row cancelling when it isn't — and the webhook
+  // reconciles status when the subscription actually lapses, so that self-heals.
+  // Narrow this to the error code if Razorpay ever gives us a stable one.
+  if (res.status === 400) return;
+  throw new Error(`Razorpay ${res.status}: ${await res.text()}`);
 }
 
 export function verifyWebhook(rawBody: string, signature: string | null): boolean {
