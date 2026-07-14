@@ -35,8 +35,15 @@ export function RetryScoring({ interviewId }: { interviewId: string }) {
       disabled={busy}
       onClick={async () => {
         setBusy(true);
-        await SCORE(interviewId);
-        router.refresh();
+        try {
+          await SCORE(interviewId);
+          router.refresh();
+        } finally {
+          // A retry that fails again leaves the interview in the same state, so the
+          // refresh renders the very same button back — without this it returns
+          // disabled and the candidate has no second retry.
+          setBusy(false);
+        }
       }}
     >
       {busy ? "Retrying…" : "Retry scoring"}

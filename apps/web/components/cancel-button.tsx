@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { errorMessage } from "@/lib/http";
 
 export function CancelButton() {
   const router = useRouter();
@@ -16,10 +17,14 @@ export function CancelButton() {
     try {
       const res = await fetch("/api/billing/cancel", { method: "POST" });
       // Same contract as checkout: failures come back as plain text.
-      if (!res.ok) throw new Error((await res.text()).slice(0, 120));
+      if (!res.ok) throw new Error(await errorMessage(res, "Couldn't cancel."));
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't cancel.");
+    } finally {
+      // Reset on success too. We cancel at cycle end, so the user stays Pro and this
+      // button stays mounted — router.refresh() re-renders the server tree but not
+      // this client state, and it would sit on "Cancelling…" forever.
       setLoading(false);
       setConfirming(false);
     }
