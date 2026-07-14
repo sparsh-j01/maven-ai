@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CodePanel } from "@/components/code-panel";
 import { Button } from "@/components/ui/button";
 import { VoiceOrb } from "@/components/voice-orb";
+import { errorMessage } from "@/lib/http";
 
 type ConnState =
   | "checking-mic"
@@ -149,7 +150,10 @@ export default function InterviewRoomPage() {
         const res = await fetch(`/api/interviews/${id}/token`, {
           method: "POST",
         });
-        if (!res.ok) throw new Error(await res.text());
+        if (!res.ok)
+          throw new Error(
+            await errorMessage(res, "Couldn't join the interview."),
+          );
         const { token, serverUrl } = (await res.json()) as {
           token: string;
           serverUrl: string;
@@ -502,7 +506,13 @@ function VoiceRoom({
           e.currentTarget.setPointerCapture(e.pointerId);
           setMic(true);
         }}
+        // pointerup is not guaranteed: a touch-scroll gesture, an incoming call, or
+        // any system UI that steals the pointer fires pointercancel INSTEAD, and the
+        // mic would stay hot — the candidate keeps broadcasting after they let go.
+        // Every path that ends the press has to close the mic.
         onPointerUp={() => setMic(false)}
+        onPointerCancel={() => setMic(false)}
+        onLostPointerCapture={() => setMic(false)}
         className={`mt-8 h-14 rounded-full px-8 font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal disabled:opacity-40 ${
           talking
             ? "bg-teal text-on-accent"
