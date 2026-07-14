@@ -18,10 +18,17 @@ export async function errorMessage(
   fallback: string,
 ): Promise<string> {
   if (!res.headers.get("content-type")?.startsWith("text/plain")) {
-    // Release the stream we're deliberately not reading. This helper funnels five
+    // Release the stream we're deliberately not reading. This helper funnels six
     // call sites now, so the unread bodies would otherwise sit open until GC.
     void res.body?.cancel();
     return fallback;
   }
-  return (await res.text()).trim().slice(0, 200) || fallback;
+  try {
+    return (await res.text()).trim().slice(0, 200) || fallback;
+  } catch {
+    // The body read can fail on its own (interrupted stream). This function exists to
+    // GUARANTEE the caller something readable, so a read error must never become the
+    // error the user is shown — that's the one outcome it's here to prevent.
+    return fallback;
+  }
 }

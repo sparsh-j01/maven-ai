@@ -21,4 +21,19 @@ describe("errorMessage", () => {
     const blank = new Response("   ", { status: 500 });
     expect(await errorMessage(blank, "fallback")).toBe("fallback");
   });
+
+  it("survives a body that fails to read", async () => {
+    // An interrupted stream makes res.text() itself reject. This helper's whole job is
+    // to hand back something readable, so a read error must not escape as the message
+    // the user sees — the exact failure it exists to prevent.
+    const torn = new Response(
+      new ReadableStream({
+        start(c) {
+          c.error(new Error("stream interrupted"));
+        },
+      }),
+      { status: 500, headers: { "content-type": "text/plain" } },
+    );
+    expect(await errorMessage(torn, "fallback")).toBe("fallback");
+  });
 });
