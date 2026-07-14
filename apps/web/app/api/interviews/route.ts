@@ -6,10 +6,15 @@ import {
   monthStart,
   monthlyInterviewLimit,
   seniority,
+  UNBILLED_STATUSES,
 } from "@maven-ai/shared";
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { personalizePlan } from "@/lib/personalize-plan";
+
+// personalizePlan runs retrieval (embed, 8s cap) and THEN the plan LLM (7s cap),
+// sequentially — ~15s worst case, past Vercel's 10s default. 60s is the Hobby ceiling.
+export const maxDuration = 60;
 
 // Per-user creation cap (spend cap): one account can't loop this endpoint to burn
 // Gemini plan-generation calls. Rolling 1-hour window off the (user_id, created_at) index.
@@ -71,7 +76,10 @@ export async function POST(req: Request) {
     "free";
 
   // Entitlement gate: monthly quota by plan, checked before the metered call so an
-  // over-quota request costs nothing.
+  // over-quota request costs nothing. UNBILLED_STATUSES is the rule (shared with the
+  // dashboard): an interview we never approved, or one that failed on our side, does
+  // not spend a slot — otherwise a free user burns all three on interviews that never
+  // happened, and can't retry until the 1st.
   const [usage] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(interviews)
@@ -79,6 +87,7 @@ export async function POST(req: Request) {
       and(
         eq(interviews.userId, userId),
         gte(interviews.createdAt, monthStart()),
+        notInArray(interviews.status, [...UNBILLED_STATUSES]),
       ),
     );
   if ((usage?.count ?? 0) >= monthlyInterviewLimit(userPlan)) {

@@ -11,6 +11,12 @@ import { persistResume } from "@/lib/store-resume";
 // parsing in a worker thread that caps pages, hard-kills a CPU-bomb, and caps memory.
 // Read as data only — embedded PDF JavaScript is never run.
 
+// The response is fast, but the real work runs in after() below (structure ≤8s +
+// embed ≤8s + R2 upload) and Vercel bills that to the SAME invocation. On the 10s
+// default the résumé's embedding was being silently dropped: the user sees "uploaded",
+// and RAG never sees the résumé. 60s is the Hobby ceiling.
+export const maxDuration = 60;
+
 const MAX_BYTES = 3 * 1024 * 1024; // 3MB — well under Vercel's 4.5MB request cap
 
 // In-memory per-user throttle — resets on redeploy and isn't cross-instance, but

@@ -102,7 +102,10 @@ const FAQS = [
   },
   {
     q: "How long does an interview take?",
-    a: "Most interviews take 10–15 minutes, including a warm-up, technical questions, adaptive follow-ups, a coding round (if selected), and a wrap-up. You can also create shorter practice sessions for focused preparation.",
+    // Ten minutes is a HARD cap (MAX_SESSION_MIN in apps/agent/main.py), not an
+    // estimate — the session ends there no matter what. Don't promise a range this
+    // page can't keep. If the cap ever moves, move this line with it.
+    a: "About ten minutes: a warm-up, technical questions, adaptive follow-ups, a coding round (if selected), and a wrap-up. Ten minutes is a hard limit — your interviewer tells you when time is nearly up and closes out cleanly, so you're never cut off mid-answer. You can also finish early whenever you're done.",
   },
   {
     q: "How am I scored?",

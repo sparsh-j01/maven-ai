@@ -26,6 +26,13 @@ type ConnState =
   | "ended"
   | "error";
 
+// How long to wait for the interviewer to join before calling it a failure.
+// "live" only means the CANDIDATE reached the room — LiveKit is happy to hold a room
+// with nobody in it. If no agent worker is running (crashed, not deployed, laptop
+// asleep), nobody ever joins, nothing errors, and the candidate sits watching a silent
+// orb until they give up. In practice the agent is dispatched within a second or two.
+const AGENT_JOIN_TIMEOUT_MS = 15_000;
+
 const STATE_LABEL: Record<ConnState, string> = {
   "checking-mic": "Checking mic…",
   "mic-denied": "Mic blocked",
@@ -81,12 +88,22 @@ export default function InterviewRoomPage() {
 
   useEffect(() => {
     let cancelled = false;
+    // Armed once the candidate is in; disarmed the moment the agent shows up.
+    let agentWatchdog: ReturnType<typeof setTimeout> | null = null;
+    // The watchdog leaves the room on purpose, so its own disconnect must not be
+    // mistaken for the candidate dropping out — it owns the terminal state.
+    let watchdogFired = false;
+    const disarmWatchdog = () => {
+      if (agentWatchdog) clearTimeout(agentWatchdog);
+      agentWatchdog = null;
+    };
+    const onParticipantConnected = () => disarmWatchdog();
     const onReconnecting = () => setState("reconnecting");
     const onReconnected = () => setState("live");
     // A normal end tears the room down ~0.5s after the "ended" frame arrives;
     // that teardown must not clobber the "ended" screen (and its report link).
     const onDisconnected = () =>
-      setState((s) => (s === "ended" ? s : "disconnected"));
+      setState((s) => (s === "ended" || watchdogFired ? s : "disconnected"));
     // Autoplay gate: keep the "enable sound" button in sync with playback state.
     const onAudioStatus = () => setAudioBlocked(!room.canPlaybackAudio);
     // The agent signals over the data channel: {type:"ended"} when it ends the
@@ -105,6 +122,7 @@ export default function InterviewRoomPage() {
       }
     };
     room
+      .on(RoomEvent.ParticipantConnected, onParticipantConnected)
       .on(RoomEvent.Reconnecting, onReconnecting)
       .on(RoomEvent.Reconnected, onReconnected)
       .on(RoomEvent.Disconnected, onDisconnected)
@@ -140,6 +158,43 @@ export default function InterviewRoomPage() {
         if (cancelled) return;
         await room.localParticipant.setMicrophoneEnabled(false);
         setState("live");
+        // The agent may already be in the room (it's dispatched when the room is
+        // created, so it often beats the candidate). Only wait if it isn't.
+        if (room.remoteParticipants.size === 0) {
+          agentWatchdog = setTimeout(() => {
+            if (cancelled || room.remoteParticipants.size > 0) return;
+            watchdogFired = true;
+            void (async () => {
+              // Leave before showing the failure. An agent that turns up late would
+              // otherwise start talking over the error screen, and a room nobody is
+              // in still burns LiveKit minutes.
+              await room.disconnect().catch(() => {});
+              // Hand the interview back: nobody spoke, so /end resets it to
+              // `approved`, which is unbilled and re-joinable. Without this the row
+              // sits `live` forever and the candidate is charged for silence.
+              let released = false;
+              try {
+                const res = await fetch(`/api/interviews/${id}/end`, {
+                  method: "POST",
+                });
+                released = res.ok;
+              } catch {
+                /* released stays false */
+              }
+              if (cancelled) return;
+              // Only promise "unbilled" when /end confirmed it. Billing charges at
+              // interview START, so saying this on a failed request tells the
+              // candidate they weren't charged when in fact they were.
+              setDetail(
+                released
+                  ? "your interviewer didn't join, so the interview service looks down. Nothing was recorded and this doesn't count against your monthly interviews — retry in a moment."
+                  : "your interviewer didn't join, so the interview service looks down. Nothing was recorded, but we couldn't confirm this interview was released — if it still shows as used, retry in a moment.",
+              );
+              // Don't stomp a room that already finished on its own.
+              setState((s) => (s === "ended" ? s : "error"));
+            })();
+          }, AGENT_JOIN_TIMEOUT_MS);
+        }
         // Try to unblock the interviewer's voice now; if the browser refuses
         // (no fresh user gesture survived the navigation), the enable-sound
         // button surfaces so the candidate can start it with a tap.
@@ -158,7 +213,9 @@ export default function InterviewRoomPage() {
 
     return () => {
       cancelled = true;
+      disarmWatchdog();
       room
+        .off(RoomEvent.ParticipantConnected, onParticipantConnected)
         .off(RoomEvent.Reconnecting, onReconnecting)
         .off(RoomEvent.Reconnected, onReconnected)
         .off(RoomEvent.Disconnected, onDisconnected)

@@ -21,9 +21,13 @@ large bank correct: __main__ runs every solver against a known value, so a wrong
 grader fails loudly instead of silently passing a bad answer.
 """
 
+import asyncio
+import logging
 import math
 import os
 from collections import Counter
+
+logger = logging.getLogger(__name__)
 
 # Judge0 CE language ids (default install). Override the ids if your instance
 # maps languages differently — `GET {JUDGE0_URL}/languages` lists them.
@@ -510,12 +514,57 @@ async def run_on_judge0(language: str, source: str, stdin: str) -> dict:
         "memory_limit": 128000,
     }
     url = base.rstrip("/") + "/submissions?base64_encoded=false&wait=true"
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=20)
-        ) as resp:
-            resp.raise_for_status()
-            return await resp.json()
+
+    # Checklist 1.2: this had no retry, so ONE 503 from RapidAPI mid-round graded a
+    # correct solution as a failure — the candidate is blamed for our infrastructure.
+    # Retry only what's worth retrying: 429/5xx and transport errors. A 4xx (bad
+    # language id, exhausted quota, bad key) is not transient — retrying just burns
+    # the daily free-tier allowance faster, so it raises immediately.
+    #
+    # ponytail: 3 attempts, fixed backoff. The candidate is sitting in silence waiting
+    # for their code to run, so the ceiling matters more than elegance — worst case is
+    # ~20s + 1s + 20s + 3s + 20s. Drop to 2 attempts if that feels long in practice.
+    last_exc: Exception | None = None
+    for attempt, backoff in enumerate((1.0, 3.0, None)):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url,
+                    json=payload,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=20),
+                ) as resp:
+                    # 4xx that isn't 429: permanent. Fail now, don't spend the quota.
+                    if 400 <= resp.status < 500 and resp.status != 429:
+                        resp.raise_for_status()
+                    if resp.status >= 500 or resp.status == 429:
+                        raise aiohttp.ClientResponseError(
+                            resp.request_info,
+                            resp.history,
+                            status=resp.status,
+                            message=f"judge0 transient {resp.status}",
+                        )
+                    return await resp.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            # A permanent 4xx surfaces as ClientResponseError too — don't retry it.
+            if (
+                isinstance(exc, aiohttp.ClientResponseError)
+                and 400 <= exc.status < 500
+                and exc.status != 429
+            ):
+                raise
+            last_exc = exc
+            if backoff is None:
+                break
+            logger.warning(
+                "judge0 attempt %d failed (%s) — retrying in %.0fs",
+                attempt + 1,
+                exc,
+                backoff,
+            )
+            await asyncio.sleep(backoff)
+
+    raise RuntimeError(f"judge0 unreachable after 3 attempts: {last_exc}") from last_exc
 
 
 if __name__ == "__main__":

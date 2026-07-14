@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  consumesQuota,
   isUnlimited,
   monthStart,
   monthlyInterviewLimit,
@@ -25,5 +26,36 @@ describe("entitlements", () => {
   it("monthStart is midnight UTC on the 1st", () => {
     const s = monthStart(new Date("2026-07-15T13:45:00Z"));
     expect(s.toISOString()).toBe("2026-07-01T00:00:00.000Z");
+  });
+});
+
+describe("consumesQuota", () => {
+  // The bug this encodes: the gate used to count EVERY row created this month, so a
+  // free user who requested three interviews an admin never approved had spent their
+  // whole month on nothing — and a scorer outage spent it for them.
+  it("does not charge for an interview we never approved", () => {
+    expect(consumesQuota("requested")).toBe(false);
+  });
+
+  // Granted but never taken. The agent worker being down must not cost the candidate
+  // a slot: /end hands a silent room back to `approved`.
+  it("does not charge for an approved interview that was never taken", () => {
+    expect(consumesQuota("approved")).toBe(false);
+  });
+
+  it("does not charge for an interview that failed on our side", () => {
+    expect(consumesQuota("failed")).toBe(false);
+  });
+
+  it("charges once the interview actually starts", () => {
+    expect(consumesQuota("live")).toBe(true);
+    expect(consumesQuota("processing")).toBe(true);
+    expect(consumesQuota("ready")).toBe(true);
+  });
+
+  // Fail closed: an unrecognised status charges, so a new status can never
+  // accidentally hand out free interviews.
+  it("charges for an unknown status", () => {
+    expect(consumesQuota("some_new_status")).toBe(true);
   });
 });

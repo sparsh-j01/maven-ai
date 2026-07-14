@@ -41,6 +41,7 @@ from coding import LANGUAGE_IDS, TESTS, cases_for, grade, run_on_judge0
 from models import AGENT_LLM_MODEL, STT_MODEL, TTS_MODEL
 from plan_walker import PlanWalker
 from prompt_context import context_block, keyterms
+from session_cap import enforce_time_cap
 from telemetry import setup_langfuse
 
 # Coding-round guards (F1/F3, §8.1): cap submission size and the number of runs
@@ -56,9 +57,25 @@ MAX_RUNS = 25
 MAX_SESSION_MIN = 10
 MAX_SESSION_SECONDS = MAX_SESSION_MIN * 60
 
-# Agent reads provider keys + LIVEKIT_* + DATABASE_URL from the repo-root .env
-# (the same values the web app uses).
-load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+# How long before the cap the interviewer is told to start wrapping up. Without this
+# the cap fires mid-sentence: a candidate in the coding round gets guillotined
+# mid-problem, with no warning, and is then graded on the half-answer they were cut
+# off in. Two minutes is enough for the agent to land the current question and close.
+WARN_BEFORE_SECONDS = 120
+
+# Env: apps/agent/.env if it exists, else the repo-root .env (the same values the web
+# app uses — the normal local-dev case, nothing to set up).
+#
+# Why the override exists: `pnpm bootstrap` symlinks the root .env into packages/db,
+# so drizzle-kit reads it. The agent dials OUT to LiveKit and needs no inbound port,
+# which means it can run against PRODUCTION from a laptop (the free hosting path) —
+# but that requires the prod DATABASE_URL in its env. Put that in the root .env and a
+# casual `pnpm db:push` from any dev shell rewrites the production schema.
+#
+# So: prod credentials go in apps/agent/.env, which drizzle-kit never reads.
+_AGENT_ENV = Path(__file__).resolve().parent / ".env"
+_ROOT_ENV = Path(__file__).resolve().parents[2] / ".env"
+load_dotenv(_AGENT_ENV if _AGENT_ENV.exists() else _ROOT_ENV)
 
 logger = logging.getLogger("interview-agent")
 
@@ -170,6 +187,16 @@ affirm an incorrect claim and never give away the answer.
 - When you are ready for the next topic, call next_question again. When it says \
 the plan is complete, thank the candidate, give a brief encouraging close, then \
 call end_interview.""" + _company_tone(meta) + context_block(meta)
+
+
+def _time_warning() -> str:
+    return (
+        "You have about two minutes of interview time left — a hard limit, not a "
+        "suggestion. Tell the candidate plainly that time is nearly up. If they are "
+        "mid-answer or mid-problem, let them finish the thought, then move to your "
+        "closing remarks and call end_interview. Do not start a new question, and do "
+        "not set a new coding problem."
+    )
 
 
 def _opening(resuming: bool) -> str:
@@ -639,24 +666,19 @@ async def entrypoint(ctx: JobContext) -> None:
     # Hard spend cap (§8.1): MAX_SESSION_MIN after the candidate joins, end the
     # session no matter what so the voice loop can't burn provider minutes
     # indefinitely. Cancelled in end_interview when the plan finishes first.
-    async def _enforce_time_cap() -> None:
-        try:
-            await asyncio.sleep(MAX_SESSION_SECONDS)
-        except asyncio.CancelledError:
-            return
-        logger.info("interview %s hit the %d-min cap — ending", interview_id, MAX_SESSION_MIN)
-        await agent._finalize("time cap")
-        await asyncio.sleep(0.5)  # let the reliable "ended" frame reach the browser
-        try:
-            await session.aclose()  # stop STT/LLM/TTS billing
-        except Exception:
-            logger.exception("session close on cap failed")
-        try:
-            await ctx.delete_room()  # disconnect + close the room (stops SFU minutes)
-        except Exception:
-            logger.exception("room delete on cap failed")
-
-    agent._cap_task = asyncio.create_task(_enforce_time_cap())
+    # Lives in session_cap.py so it can be tested without LiveKit — see the tests
+    # for the "warning blows up, cap still fires" case that used to be a live bug.
+    agent._cap_task = asyncio.create_task(
+        enforce_time_cap(
+            agent,
+            session,
+            ctx,
+            interview_id,
+            warning=_time_warning(),
+            total_s=MAX_SESSION_SECONDS,
+            warn_s=WARN_BEFORE_SECONDS,
+        )
+    )
 
     await session.generate_reply(instructions=_opening(resuming))
 
