@@ -32,13 +32,17 @@ export function ThemeToggle() {
     <button
       type="button"
       onClick={toggle}
+      // Until the effect reads what the pre-paint script applied, `theme` is null and
+      // toggle() would compute "dark" no matter what is actually on screen — a click
+      // in that window flips a light page to dark and calls it a toggle.
+      disabled={theme === null}
       aria-label={
         theme === "dark" ? "Switch to light theme" : "Switch to dark theme"
       }
       className="grid h-9 w-9 place-items-center rounded-full border border-fg/15 text-muted transition-colors hover:bg-fg/5 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
       {theme === null ? (
-        <span className="h-4 w-4" aria-hidden />
+        <span className="block h-4 w-4" aria-hidden />
       ) : theme === "dark" ? (
         <Sun className="h-4 w-4" aria-hidden />
       ) : (
