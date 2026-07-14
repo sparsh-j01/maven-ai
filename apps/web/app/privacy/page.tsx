@@ -108,6 +108,7 @@ export default function PrivacyPage() {
               request a copy of your data, or deletion of your account and its
               content, by emailing{" "}
               <a className="text-teal hover:underline" href={`mailto:${SUPPORT_EMAIL}`}>
+                {SUPPORT_EMAIL}
               </a>{" "}
               or from the{" "}
               <Link className="text-teal hover:underline" href="/delete-account">
@@ -171,6 +172,7 @@ export default function PrivacyPage() {
             <p>
               Questions about privacy? Email{" "}
               <a className="text-teal hover:underline" href={`mailto:${SUPPORT_EMAIL}`}>
+                {SUPPORT_EMAIL}
               </a>
               .
             </p>

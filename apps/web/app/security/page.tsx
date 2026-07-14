@@ -114,6 +114,7 @@ export default function SecurityPage() {
             <p>
               Found a security issue? Please email{" "}
               <a className={A} href={`mailto:${SUPPORT_EMAIL}`}>
+                {SUPPORT_EMAIL}
               </a>{" "}
               with the details and steps to reproduce. We&apos;ll acknowledge
               your report, keep you updated, and credit you if you&apos;d like
