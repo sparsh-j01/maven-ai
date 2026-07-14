@@ -18,7 +18,11 @@ import {
   type Seniority,
   type Speaker,
 } from "@maven-ai/shared";
-import { MODELS, SCORER_TEMPERATURE } from "@maven-ai/shared/models";
+import {
+  MODELS,
+  SCORER_TEMPERATURE,
+  SCORER_TIMEOUT_MS,
+} from "@maven-ai/shared/models";
 import { asc, eq } from "drizzle-orm";
 import { inngest } from "./inngest";
 
@@ -26,7 +30,8 @@ import { inngest } from "./inngest";
 // can't drift (swap via SCORER_MODEL, then `pnpm eval`). Default is flash, not
 // Pro: gemini-2.5-pro is paid-tier only (free tier = 0 quota) and would 429.
 const MODEL = MODELS.scorer;
-const TIMEOUT_MS = 30_000;
+// Shared with the eval grader — see SCORER_TIMEOUT_MS. Was 30s here and 60s there.
+const TIMEOUT_MS = SCORER_TIMEOUT_MS;
 
 type Loaded = { hasReport: boolean; isPro: boolean; input: ScorerInput };
 

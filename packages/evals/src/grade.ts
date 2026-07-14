@@ -6,7 +6,11 @@ import {
   type FeedbackReport,
   type ScorerInput,
 } from "@maven-ai/shared";
-import { MODELS, SCORER_TEMPERATURE } from "@maven-ai/shared/models";
+import {
+  MODELS,
+  SCORER_TEMPERATURE,
+  SCORER_TIMEOUT_MS,
+} from "@maven-ai/shared/models";
 
 // Same structured-output grading call the async scorer runs in apps/web, minus
 // the DB/Inngest plumbing — so the eval exercises the real prompt + schema, not
@@ -14,7 +18,10 @@ import { MODELS, SCORER_TEMPERATURE } from "@maven-ai/shared/models";
 // Model + temperature come from the shared config, so this grades EXACTLY what
 // production ships (that's the whole point of the eval as a model gate).
 const MODEL = MODELS.scorer;
-const TIMEOUT_MS = 60_000;
+// Shared with production (SCORER_TIMEOUT_MS). This was 60s while prod was 30s, so the
+// eval could pass a grade that production would abort. The gate now measures the same
+// budget it ships.
+const TIMEOUT_MS = SCORER_TIMEOUT_MS;
 
 export async function grade(input: ScorerInput): Promise<FeedbackReport> {
   const key = process.env.GOOGLE_API_KEY;

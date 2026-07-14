@@ -28,3 +28,19 @@ export const MODELS = {
 // diverge. Override with SCORER_TEMPERATURE only if you know why.
 const rawTemp = Number(env("SCORER_TEMPERATURE", "0"));
 export const SCORER_TEMPERATURE = Number.isFinite(rawTemp) ? rawTemp : 0;
+
+// How long one grading call may take. Checklist 1.1: this was 30s in production and
+// 60s in the eval, so the eval was measuring a model with twice the budget prod gave
+// it — a grade taking 40s passed the eval and failed the customer. One number now,
+// read by both.
+//
+// 45s, not 60s: the Vercel function that runs the scorer is capped at 60s
+// (maxDuration in api/inngest), and the abort must fire BEFORE the platform kills the
+// invocation — otherwise there's no clean error to retry, just a dead request. 45s
+// leaves room for the DB write after the call returns.
+//
+// It is still a guess, not a measurement. `pnpm eval:live` prints the real duration:
+// once you have it, set this from that number.
+const rawTimeout = Number(env("SCORER_TIMEOUT_MS", "45000"));
+export const SCORER_TIMEOUT_MS =
+  Number.isFinite(rawTimeout) && rawTimeout > 0 ? rawTimeout : 45_000;
