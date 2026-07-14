@@ -6,9 +6,17 @@ restart the worker. Defaults match what ships today.
 
 import os
 
+
+def _env(key: str, default: str) -> str:
+    """os.getenv's default only fires when the key is ABSENT. A key present but
+    empty (`STT_MODEL=` in a copied .env) returned "" and the agent booted with an
+    empty model id. Treat blank as unset — same rule as the TS side's env()."""
+    return (os.getenv(key) or "").strip() or default
+
+
 # Interviewer brain (LiveKit google.LLM).
-AGENT_LLM_MODEL = os.getenv("AGENT_LLM_MODEL", "gemini-2.5-flash").strip()
+AGENT_LLM_MODEL = _env("AGENT_LLM_MODEL", "gemini-2.5-flash")
 # Speech-to-text (Deepgram). See main.py for the en-IN locale rationale.
-STT_MODEL = os.getenv("STT_MODEL", "nova-3").strip()
+STT_MODEL = _env("STT_MODEL", "nova-3")
 # Text-to-speech voice (Deepgram Aura).
-TTS_MODEL = os.getenv("TTS_MODEL", "aura-asteria-en").strip()
+TTS_MODEL = _env("TTS_MODEL", "aura-asteria-en")
