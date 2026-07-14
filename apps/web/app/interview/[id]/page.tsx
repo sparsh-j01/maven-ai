@@ -8,14 +8,13 @@ import {
   useTranscriptions,
   useVoiceAssistant,
 } from "@livekit/components-react";
-import { getCodingProblem } from "@maven-ai/shared";
+import { errorMessage, getCodingProblem } from "@maven-ai/shared";
 import { Room, RoomEvent } from "livekit-client";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CodePanel } from "@/components/code-panel";
 import { Button } from "@/components/ui/button";
 import { VoiceOrb } from "@/components/voice-orb";
-import { errorMessage } from "@/lib/http";
 
 type ConnState =
   | "checking-mic"
@@ -236,10 +235,26 @@ export default function InterviewRoomPage() {
     setLeaving(true);
     try {
       const res = await fetch(`/api/interviews/${id}/end`, { method: "POST" });
+      // Never bounce a FAILED end to the dashboard. /end flips the row to `processing`
+      // before it enqueues the scorer, so an Inngest outage (or a Clerk session that
+      // lapsed during a long interview) leaves the interview stranded with no job, no
+      // report that will ever exist, and a monthly slot already spent — while the
+      // candidate is redirected as though it worked. res.json() on a plain-text 401 or
+      // an HTML 500 throws straight into the catch, which is how it stayed invisible.
+      if (!res.ok) {
+        setDetail(await errorMessage(res, "Couldn't end the interview."));
+        setState("error");
+        setLeaving(false);
+        return;
+      }
       const { scored } = (await res.json()) as { scored?: boolean };
       window.location.href = scored ? `/interview/${id}/report` : "/dashboard";
     } catch {
-      window.location.href = "/dashboard";
+      setDetail(
+        "Couldn't end the interview — check your connection and try again.",
+      );
+      setState("error");
+      setLeaving(false);
     }
   }
 
