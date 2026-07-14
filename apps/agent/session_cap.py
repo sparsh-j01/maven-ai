@@ -15,6 +15,21 @@ from typing import Any
 logger = logging.getLogger("maven.agent")
 
 
+async def _guarded(what: str, coro: Any, timeout: float) -> None:
+    """Run one teardown step; never let it take the rest of the teardown with it.
+
+    Every step here is the same shape: it talks to something over a network that can
+    hang. _finalize does a DB UPDATE and a room publish; aclose talks to the STT/TTS
+    providers; delete_room talks to LiveKit. An unbounded await on ANY of them skips
+    the steps below it — and the steps below it are the ones that stop the billing.
+    Bounded, logged, and we move on.
+    """
+    try:
+        await asyncio.wait_for(coro, timeout)
+    except Exception:  # CancelledError is a BaseException — it still propagates
+        logger.exception("%s failed during cap teardown — continuing", what)
+
+
 async def enforce_time_cap(
     agent: Any,
     session: Any,
@@ -24,6 +39,7 @@ async def enforce_time_cap(
     total_s: float,
     warn_s: float,
     grace_s: float = 0.5,
+    step_s: float = 10.0,
 ) -> None:
     """Warn at total_s - warn_s, then finalize + tear down at total_s.
 
@@ -67,13 +83,9 @@ async def enforce_time_cap(
         return
 
     logger.info("interview %s hit the %ss cap — ending", interview_id, total_s)
-    await agent._finalize("time cap")
+    # Order matters (mark the row, let the browser hear about it, then stop the meter),
+    # but no step may block the next one — see _guarded.
+    await _guarded("finalize", agent._finalize("time cap"), step_s)
     await asyncio.sleep(grace_s)  # let the reliable "ended" frame reach the browser
-    try:
-        await session.aclose()  # stop STT/LLM/TTS billing
-    except Exception:
-        logger.exception("session close on cap failed")
-    try:
-        await ctx.delete_room()  # disconnect + close the room (stops SFU minutes)
-    except Exception:
-        logger.exception("room delete on cap failed")
+    await _guarded("session close", session.aclose(), step_s)  # stop STT/LLM/TTS billing
+    await _guarded("room delete", ctx.delete_room(), step_s)  # stop SFU minutes

@@ -13,19 +13,25 @@ TOTAL, WARN = 0.12, 0.06
 
 
 class FakeAgent:
-    def __init__(self, ended: bool = False) -> None:
+    def __init__(self, ended: bool = False, finalize=None) -> None:
         self._ended = ended
         self.finalized: list[str] = []
+        self._finalize_mode = finalize
 
     async def _finalize(self, reason: str) -> None:
         self.finalized.append(reason)
+        if self._finalize_mode == "raise":
+            raise RuntimeError("publish blew up")
+        if self._finalize_mode == "hang":
+            await asyncio.sleep(3600)  # a stalled DB write or room publish
 
 
 class FakeSession:
-    def __init__(self, reply=None) -> None:
+    def __init__(self, reply=None, close=None) -> None:
         self.closed = False
         self.warned = 0
         self._reply = reply
+        self._close = close
 
     async def generate_reply(self, instructions: str) -> None:
         self.warned += 1
@@ -35,6 +41,8 @@ class FakeSession:
             await asyncio.sleep(3600)
 
     async def aclose(self) -> None:
+        if self._close == "hang":
+            await asyncio.sleep(3600)
         self.closed = True
 
 
@@ -50,7 +58,15 @@ def run(agent, session, ctx):
     started = time.monotonic()
     asyncio.run(
         enforce_time_cap(
-            agent, session, ctx, "iv1", "wrap up", TOTAL, WARN, grace_s=0.0
+            agent,
+            session,
+            ctx,
+            "iv1",
+            "wrap up",
+            TOTAL,
+            WARN,
+            grace_s=0.0,
+            step_s=0.05,
         )
     )
     return time.monotonic() - started
@@ -87,6 +103,28 @@ def test_already_ended_skips_the_warning():
     run(agent, session, ctx)
     assert session.warned == 0  # don't talk over a closed session
     assert session.closed and ctx.deleted
+
+
+def test_finalize_raises_but_the_meter_still_stops():
+    # _finalize publishes to the room and writes the DB. If it blows up, the steps
+    # BELOW it are the ones that stop the billing — they must still run.
+    agent, session, ctx = FakeAgent(finalize="raise"), FakeSession(), FakeCtx()
+    run(agent, session, ctx)
+    assert session.closed and ctx.deleted
+
+
+def test_finalize_hangs_but_the_meter_still_stops():
+    agent, session, ctx = FakeAgent(finalize="hang"), FakeSession(), FakeCtx()
+    run(agent, session, ctx)
+    assert session.closed and ctx.deleted
+
+
+def test_session_close_hangs_but_the_room_is_still_deleted():
+    # aclose() talks to the STT/TTS providers; delete_room stops the SFU meter. A hang
+    # in the first must not strand the second.
+    agent, session, ctx = FakeAgent(), FakeSession(close="hang"), FakeCtx()
+    run(agent, session, ctx)
+    assert ctx.deleted
 
 
 def test_cancel_tears_down_nothing():
