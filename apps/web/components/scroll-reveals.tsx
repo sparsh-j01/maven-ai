@@ -34,6 +34,10 @@ export function ScrollReveals() {
         });
       });
     });
+    // matchMedia owns its own media listeners and the ScrollTriggers created inside
+    // it; the hook's context doesn't reach them, so revert it here or they outlive
+    // the component.
+    return () => mm.revert();
   });
   return null;
 }

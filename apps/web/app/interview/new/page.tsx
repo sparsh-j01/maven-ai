@@ -15,6 +15,7 @@ import { useState } from "react";
 import { TopBar } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { errorMessage } from "@/lib/http";
 import { UpgradeButton } from "@/components/upgrade-button";
 import { cn } from "@/lib/utils";
 
@@ -136,13 +137,7 @@ export default function NewInterviewPage() {
       const fd = new FormData();
       fd.append("file", file);
       const res = await fetch("/api/resumes/parse", { method: "POST", body: fd });
-      if (!res.ok) {
-        // Surface the route's plain-text message; never dump an HTML 500 page.
-        const msg = res.headers.get("content-type")?.startsWith("text/plain")
-          ? (await res.text()).slice(0, 200)
-          : "";
-        throw new Error(msg || "Couldn't read that PDF");
-      }
+      if (!res.ok) throw new Error(await errorMessage(res, "Couldn't read that PDF"));
       const { text } = (await res.json()) as { text: string };
       setResume(text);
       setResumeFileName(file.name);
@@ -175,7 +170,7 @@ export default function NewInterviewPage() {
         setLoading(false);
         return;
       }
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await errorMessage(res, "Failed to start"));
       await res.json();
       // The interview is created as `requested`; it can't start until an admin
       // approves it, so land on the dashboard with a confirmation.

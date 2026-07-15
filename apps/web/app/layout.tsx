@@ -22,8 +22,11 @@ const description =
 export const metadata: Metadata = {
   // Absolute URLs for the OG card. Vercel sets VERCEL_URL per deployment; set
   // NEXT_PUBLIC_SITE_URL to pin the canonical domain in production.
+  // `||`, not `??`: a declared-but-blank NEXT_PUBLIC_SITE_URL (exactly what copying
+  // .env.example gives you) is an empty string, which ?? happily passes through to
+  // new URL("") — and that throws, failing the whole build.
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL ??
+    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
       (process.env.VERCEL_URL
         ? `https://${process.env.VERCEL_URL}`
         : "http://localhost:3000"),

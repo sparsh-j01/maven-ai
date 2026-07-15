@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { errorMessage } from "@/lib/http";
 
 export function UpgradeButton() {
   const [loading, setLoading] = useState(false);
@@ -15,7 +16,8 @@ export function UpgradeButton() {
       // The route answers failures in plain text (503 annual-unavailable, 502
       // gateway). Surface it — a button that just stops spinning tells the user
       // nothing, and this is the money path.
-      if (!res.ok) throw new Error((await res.text()).slice(0, 120));
+      if (!res.ok)
+        throw new Error(await errorMessage(res, "Couldn't start checkout."));
       const { url } = (await res.json()) as { url?: string };
       if (url) {
         window.location.href = url;

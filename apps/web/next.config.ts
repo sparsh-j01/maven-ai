@@ -14,6 +14,35 @@ function clerkHost(): string {
   return "*.clerk.accounts.dev";
 }
 
+// The four origins the BROWSER actually opens a connection to. Sentry is not among
+// them — it runs server + edge only (there is no sentry.client.config), so it needs
+// no connect-src entry.
+//
+// livekit.cloud stays a wildcard on purpose. LiveKit Cloud fetches region settings
+// over HTTPS and then hands the signalling socket to a REGIONAL node whose hostname
+// is not the project URL, so pinning NEXT_PUBLIC_LIVEKIT_URL alone would break every
+// interview in the regions that redirect. Same reason *.i.posthog.com is a wildcard:
+// PostHog loads assets from a sibling host (us-assets.i.…) of the configured api host.
+function connectSrc(clerk: string, dev: boolean): string {
+  // `||`, not `??`: a blank env var is blank, not absent — see lib/contact.ts.
+  const posthog =
+    process.env.NEXT_PUBLIC_POSTHOG_HOST?.trim() || "https://us.i.posthog.com";
+  const livekit = process.env.NEXT_PUBLIC_LIVEKIT_URL?.trim();
+  const origins = [
+    "'self'",
+    `https://${clerk}`,
+    "https://clerk-telemetry.com",
+    "https://challenges.cloudflare.com",
+    "https://*.livekit.cloud",
+    "wss://*.livekit.cloud",
+    "https://*.i.posthog.com",
+    posthog,
+    ...(livekit ? [livekit] : []),
+    ...(dev ? ["ws:"] : []),
+  ];
+  return `connect-src ${[...new Set(origins)].join(" ")}`;
+}
+
 // 'unsafe-inline' scripts is a deliberate tradeoff (inline theme + Clerk boot scripts, no
 // XSS sinks). Move to nonce + strict-dynamic if a raw-HTML sink ever lands.
 function contentSecurityPolicy(): string {
@@ -25,7 +54,10 @@ function contentSecurityPolicy(): string {
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
-    `connect-src 'self' https: wss:${dev ? " ws:" : ""}`,
+    // Was 'self' https: wss:, which let any injected script phone home to any host —
+    // and script-src allows 'unsafe-inline', so that mattered. VERIFY ON A PREVIEW
+    // DEPLOY: a missing origin here fails in the browser console, not the build.
+    connectSrc(clerk, dev),
     "worker-src 'self' blob:",
     `frame-src 'self' https://${clerk} https://challenges.cloudflare.com`,
     "object-src 'none'",

@@ -135,6 +135,7 @@ export default function TermsPage() {
             <p>
               Questions about these terms? Email{" "}
               <a className="text-teal hover:underline" href={`mailto:${SUPPORT_EMAIL}`}>
+                {SUPPORT_EMAIL}
               </a>
               .
             </p>

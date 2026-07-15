@@ -14,6 +14,11 @@ function authHeader(): string {
   return "Basic " + Buffer.from(`${id}:${secret}`).toString("base64");
 }
 
+// fetch has no default timeout, so a stalled Razorpay leaves the route hanging until
+// Vercel kills the invocation — the user clicks Upgrade and gets a dead request with
+// no error to show. Abort first and throw something the caller can actually surface.
+const RAZORPAY_TIMEOUT_MS = 10_000;
+
 // userId rides in `notes` so the webhook can map the payment back to a user.
 export async function createProSubscription(
   userId: string,
@@ -23,6 +28,7 @@ export async function createProSubscription(
 ): Promise<string> {
   const res = await fetch("https://api.razorpay.com/v1/subscriptions", {
     method: "POST",
+    signal: AbortSignal.timeout(RAZORPAY_TIMEOUT_MS),
     headers: {
       "Content-Type": "application/json",
       Authorization: authHeader(),
@@ -49,6 +55,7 @@ export async function cancelSubscription(subId: string): Promise<void> {
     `https://api.razorpay.com/v1/subscriptions/${subId}/cancel`,
     {
       method: "POST",
+      signal: AbortSignal.timeout(RAZORPAY_TIMEOUT_MS),
       headers: {
         "Content-Type": "application/json",
         Authorization: authHeader(),

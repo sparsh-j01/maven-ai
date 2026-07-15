@@ -35,28 +35,39 @@ export async function POST(req: Request) {
   // order — a stray late "charged" after a "cancelled" could re-activate, but the
   // next billing cycle self-corrects and this is test-mode volume. stripeSubId
   // holds the Razorpay subscription id (generic gateway id; see schema comment).
+  //
+  // Both writes go in one transaction: users.plan and the subscriptions row are the
+  // same fact stored twice. Landing one without the other leaves a user paying with
+  // no subscription row to cancel, or downgraded while the row still reads active.
   switch (event.event) {
     case "subscription.activated":
     case "subscription.charged":
     case "subscription.resumed": {
-      await db.update(users).set({ plan: "pro" }).where(eq(users.id, userId));
-      await db
-        .insert(subscriptions)
-        .values({ userId, stripeSubId: sub.id, status: "active" })
-        .onConflictDoUpdate({
-          target: subscriptions.userId,
-          set: { stripeSubId: sub.id, status: "active" },
-        });
+      await db.transaction(async (tx) => {
+        await tx.update(users).set({ plan: "pro" }).where(eq(users.id, userId));
+        await tx
+          .insert(subscriptions)
+          .values({ userId, stripeSubId: sub.id, status: "active" })
+          .onConflictDoUpdate({
+            target: subscriptions.userId,
+            set: { stripeSubId: sub.id, status: "active" },
+          });
+      });
       break;
     }
     case "subscription.halted":
     case "subscription.cancelled":
     case "subscription.completed": {
-      await db.update(users).set({ plan: "free" }).where(eq(users.id, userId));
-      await db
-        .update(subscriptions)
-        .set({ status: sub.status })
-        .where(eq(subscriptions.userId, userId));
+      await db.transaction(async (tx) => {
+        await tx
+          .update(users)
+          .set({ plan: "free" })
+          .where(eq(users.id, userId));
+        await tx
+          .update(subscriptions)
+          .set({ status: sub.status })
+          .where(eq(subscriptions.userId, userId));
+      });
       break;
     }
   }
