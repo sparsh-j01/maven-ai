@@ -106,17 +106,26 @@ export function CodePanel({
   }, [room]);
 
   const run = useCallback(() => {
+    // Same gate as the debounced publish: with Monaco unmounted the button ships the
+    // untouched starter buffer to the agent, Judge0 runs it, and the candidate is
+    // graded on code they never wrote. The button is also disabled until ready.
+    if (!editorReady) return;
     setResult(null);
     setRunning(true);
     publish(room, { type: "code", language, code });
     publish(room, { type: "run" });
     if (timer.current) clearTimeout(timer.current);
-    // Fallback: clear the spinner if the agent never answers.
+    // Fallback: clear the spinner if the agent never answers. The agent runs the
+    // hidden cases sequentially, each a Judge0 call that can retry up to ~64s, so a
+    // correct-but-slow solution needs a generous ceiling — fire too early and the
+    // strip flashes "failed" before the real result lands (DataReceived overwrites it).
+    // ponytail: 70s covers one full retry cycle; an all-pass multi-case run can still
+    // exceed it, and the late run_result corrects the strip when it arrives.
     timer.current = setTimeout(() => {
       setRunning(false);
       setResult({ ok: false, error: "no response from the sandbox" });
-    }, 25_000);
-  }, [room, language, code]);
+    }, 70_000);
+  }, [room, language, code, editorReady]);
 
   return (
     <div className="flex h-full min-h-0 flex-col border-l border-fg/10 bg-panel/60 backdrop-blur-2xl">
@@ -150,7 +159,7 @@ export function CodePanel({
         <button
           type="button"
           onClick={run}
-          disabled={running}
+          disabled={running || !editorReady}
           className="ml-auto rounded-full bg-teal px-4 py-1 text-xs font-medium text-on-accent transition-opacity disabled:opacity-50"
         >
           {running ? "Running…" : "Run"}
