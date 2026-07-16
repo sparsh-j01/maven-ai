@@ -47,6 +47,17 @@ export async function POST(_req: Request) {
   // total_count = billing cycles: ~10 years either way, just a long ceiling.
   const totalCount = useAnnual ? 10 : 120;
 
+  // Ensure the users row exists BEFORE Razorpay charges. The webhook that upgrades the
+  // user only knows the userId (from the subscription notes) and inserts a subscriptions
+  // row FK'd to users.id. A user who subscribes before ever starting an interview has no
+  // users row yet — the insert FK-violates, the webhook 500s, and Razorpay retries it
+  // forever: money taken, never upgraded. users.email is NOT NULL so the webhook can't
+  // create the row (it has no email); checkout has the email, so it does it here.
+  await getDb()
+    .insert(users)
+    .values({ id: userId, email: email ?? "" })
+    .onConflictDoNothing();
+
   try {
     const url = await createProSubscription(userId, planId, totalCount, email);
     return Response.json({ url });
