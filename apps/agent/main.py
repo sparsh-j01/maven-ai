@@ -39,6 +39,7 @@ from livekit.plugins import deepgram, google, silero
 
 from coding import LANGUAGE_IDS, TESTS, cases_for, grade, run_on_judge0
 from models import AGENT_LLM_MODEL, STT_MODEL, TTS_MODEL
+from packet import MAX_PACKET_BYTES, fit_run_result
 from plan_walker import PlanWalker
 from prompt_context import context_block, keyterms
 from session_cap import enforce_time_cap
@@ -48,9 +49,10 @@ from telemetry import setup_langfuse
 # per interview so one session can't push huge payloads or hammer the sandbox.
 MAX_CODE_BYTES = 20_000
 MAX_RUNS = 25
-# Trim stdout/stderr before broadcasting run_result. LiveKit drops an oversized reliable
-# data packet silently, so an infinite-loop or huge-output program would publish nothing
-# and the candidate would just see the client's "no response" timeout instead of a result.
+# Coarse first pass on stdout/stderr before broadcasting run_result, so the common case
+# never reaches the byte budget. It is NOT the bound that matters: json.dumps escapes
+# non-ASCII, so 4k chars can still serialize past the packet ceiling — fit_run_result
+# (packet.py) enforces the real limit on the encoded frame.
 MAX_RESULT_CHARS = 4_000
 
 # Hard wall-clock cap on the live voice loop (spend cap, §8.1): a single session
@@ -258,9 +260,22 @@ class InterviewAgent(Agent):
     async def _publish(self, obj: dict) -> None:
         """Send a JSON control message to the room on the `maven` topic. Best-effort
         — the UI updating must never block or break the interview."""
+        payload = json.dumps(obj)
+        # An oversized reliable packet is dropped by LiveKit without raising, so the
+        # except below would never see it. Log it here, for every message type: a
+        # dropped packet is a UI that silently stops updating, and this is the only
+        # place it can be noticed. run_result is pre-trimmed (see fit_run_result).
+        size = len(payload.encode())
+        if size > MAX_PACKET_BYTES:
+            logger.error(
+                "data packet over the wire limit (%d bytes, type=%s) — LiveKit will "
+                "drop it silently",
+                size,
+                obj.get("type"),
+            )
         try:
             await self._room.local_participant.publish_data(
-                json.dumps(obj), reliable=True, topic="maven"
+                payload, reliable=True, topic="maven"
             )
         except Exception:
             logger.exception("data publish failed: %s", obj.get("type"))
@@ -455,7 +470,7 @@ class InterviewAgent(Agent):
         """Run the latest editor buffer because the candidate hit Run in the UI,
         and publish the result strip back to them (§7.4)."""
         res = await self._run_code(self._buffer["language"], self._buffer["code"])
-        await self._publish({"type": "run_result", **res})
+        await self._publish(fit_run_result({"type": "run_result", **res}))
 
     @function_tool()
     async def run_code(self) -> str:
@@ -464,7 +479,7 @@ class InterviewAgent(Agent):
         react. Call this when the candidate says they're ready or asks you to run
         it. Never invent a result — only report what this returns."""
         res = await self._run_code(self._buffer["language"], self._buffer["code"])
-        await self._publish({"type": "run_result", **res})
+        await self._publish(fit_run_result({"type": "run_result", **res}))
         if not res.get("ok"):
             return f"Could not run the code ({res.get('error')}). Ask them to try again."
         if res["passed"]:
@@ -535,15 +550,18 @@ async def _connect_db() -> Optional[asyncpg.Connection]:
 
 
 async def _read_cursor(db: Optional[asyncpg.Connection], interview_id: uuid.UUID) -> int:
+    """Where the plan left off. Raises if the read fails: a swallowed error here used to
+    return 0, which silently restarts a resumed interview from question one — the
+    candidate re-answers everything and both passes land in the transcript. Failing the
+    job is recoverable (LiveKit redispatches); a corrupted interview is not.
+
+    A row with plan_cursor NULL is a genuine 0 — that's a fresh interview, not a failure.
+    """
     if not db:
         return 0
-    try:
-        row = await db.fetchrow(
-            "SELECT plan_cursor FROM interviews WHERE id = $1", interview_id
-        )
-    except Exception:
-        logger.exception("cursor read failed — starting from the top")
-        return 0
+    row = await db.fetchrow(
+        "SELECT plan_cursor FROM interviews WHERE id = $1", interview_id
+    )
     if not row or row["plan_cursor"] is None:
         return 0
     return int(row["plan_cursor"])
@@ -553,17 +571,20 @@ async def _read_max_offset(
     db: Optional[asyncpg.Connection], interview_id: uuid.UUID
 ) -> int:
     """The largest ts_end_ms already stored for this interview, so a resumed session
-    continues the transcript clock past the earlier turns instead of restarting at 0."""
+    continues the transcript clock past the earlier turns instead of restarting at 0.
+
+    Raises if the read fails. Returning 0 on error looked safe but is the exact bug the
+    caller guards against: the resumed turns get offsets near zero and the scorer, which
+    orders by ts_start_ms, reads them BEFORE the turns they came after. That ships a
+    scrambled transcript and a confidently wrong score, with nothing to show for it.
+    Only called when resuming — with no prior turns, 0 needs no lookup to be right.
+    """
     if not db:
         return 0
-    try:
-        row = await db.fetchrow(
-            "SELECT max(ts_end_ms) AS m FROM interview_turns WHERE interview_id = $1",
-            interview_id,
-        )
-    except Exception:
-        logger.exception("max-offset read failed — transcript offsets restart at 0")
-        return 0
+    row = await db.fetchrow(
+        "SELECT max(ts_end_ms) AS m FROM interview_turns WHERE interview_id = $1",
+        interview_id,
+    )
     return int(row["m"]) if row and row["m"] is not None else 0
 
 
@@ -612,10 +633,11 @@ async def entrypoint(ctx: JobContext) -> None:
     # ts_start_ms) reads them BEFORE the pre-resume turns, scrambling the transcript.
     # ponytail: seek precision after a resume gap is approximate; turn ORDER is exact,
     # which is all the scorer and report reader need.
-    max_offset = await _read_max_offset(db, interview_id)
-    if max_offset:
-        agent._last_offset = max_offset
-        agent._start_ms = time.monotonic() * 1000 - max_offset
+    if resuming:
+        max_offset = await _read_max_offset(db, interview_id)
+        if max_offset:
+            agent._last_offset = max_offset
+            agent._start_ms = time.monotonic() * 1000 - max_offset
     session = _make_session(keyterms=keyterms(meta))
 
     # asyncio only holds weak references to tasks, so a bare create_task() can be
