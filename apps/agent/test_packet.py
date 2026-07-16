@@ -53,3 +53,18 @@ def test_budget_is_respected_even_when_output_is_incompressible():
     # Every char escapes to 6 bytes, so the search has to bottom out near zero.
     msg = _run_result(stdout="中" * 100_000, stderr="中" * 100_000)
     assert encoded_len(fit_run_result(msg)) <= MAX_PACKET_BYTES
+
+
+def test_oversized_failed_result_is_bounded():
+    # A failed run carries no stdout/stderr at all — just `error`. The first cut of this
+    # module trimmed only stdout/stderr, so main.py echoing the client's `language` into
+    # `error` produced a frame nothing could shrink, and LiveKit dropped it in silence.
+    msg = {"type": "run_result", "ok": False, "error": "x" * 50_000}
+    assert encoded_len(msg) > MAX_PACKET_BYTES
+    assert encoded_len(fit_run_result(msg)) <= MAX_PACKET_BYTES
+
+
+def test_failed_result_keeps_its_error_readable():
+    fitted = fit_run_result({"type": "run_result", "ok": False, "error": "sandbox " * 4_000})
+    assert fitted["ok"] is False
+    assert fitted["error"].startswith("sandbox ")

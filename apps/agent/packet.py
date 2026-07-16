@@ -24,9 +24,15 @@ MAX_PACKET_BYTES = 12_000
 # Without a marker, truncated output looks like the program simply stopped there.
 TRUNCATED = "\n[truncated]"
 
-# Only these two carry candidate output; everything else in a run_result is a verdict
-# field (ok/passed/status) that must survive intact for the UI to render correctly.
-_TRIMMABLE = ("stdout", "stderr")
+# The three variable-length text fields in a run_result. Everything else is a verdict
+# (ok/passed/status) that must survive intact for the UI to render correctly.
+#
+# `error` is here even though main.py only ever sets it to fixed strings: the budget
+# can only be a guarantee if it covers every field that carries text, and a field this
+# function can't trim is a field that can silently sink the packet. That's how the
+# `unsupported language: {language}` echo — client input, straight into `error` — got
+# past the first version of this cap.
+_TRIMMABLE = ("stdout", "stderr", "error")
 
 
 def encoded_len(msg: dict) -> int:

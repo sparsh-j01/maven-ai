@@ -422,9 +422,18 @@ class InterviewAgent(Agent):
         Returns a result dict the caller publishes/returns; never raises."""
         if not self._coding_id or self._coding_id not in TESTS:
             return {"ok": False, "error": "no active coding problem"}
-        if language not in LANGUAGE_IDS:
-            return {"ok": False, "error": f"unsupported language: {language}"}
-        if not code.strip():
+        # language/code are whatever JSON the browser put on the data channel (_on_data
+        # stores them unread), so neither is necessarily a str. isinstance goes first for
+        # both: `x in LANGUAGE_IDS` raises TypeError on an unhashable value and
+        # `code.strip()` raises AttributeError on a non-str, and this function promises
+        # its callers it never raises.
+        if not isinstance(language, str) or language not in LANGUAGE_IDS:
+            # Deliberately not echoed back. `error` is a fixed-string field — nothing
+            # trims it — so a client that sends a few KB of "language" would push the
+            # whole run_result past the packet limit and LiveKit would drop the result
+            # silently. The client sent the value; it doesn't need it read back.
+            return {"ok": False, "error": "unsupported language"}
+        if not isinstance(code, str) or not code.strip():
             return {"ok": False, "error": "no code to run"}
         if len(code.encode("utf-8")) > MAX_CODE_BYTES:
             return {"ok": False, "error": "code too large"}
