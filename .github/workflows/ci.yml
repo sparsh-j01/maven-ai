@@ -46,9 +46,13 @@ jobs:
       # green; declared-but-empty, `??` passes "" through to new URL("") and the build
       # dies. CI used to omit the line entirely, so a revert of that fix would have
       # shipped green and only detonated on a real deploy. Now `next build` is the test.
+      # NEXT_PUBLIC_SUPPORT_EMAIL gets a real-looking dummy rather than the blank
+      # treatment above, because lib/contact.ts deliberately throws on a missing one at
+      # NODE_ENV=production and blank would fail every CI run. That throw is aimed at the
+      # DEPLOY build, which is the only build whose env is the one users get.
       - name: Build web
         run: |
-          printf 'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk\nCLERK_SECRET_KEY=sk_test_ci\nNEXT_PUBLIC_SITE_URL=\n' > apps/web/.env
+          printf 'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk\nCLERK_SECRET_KEY=sk_test_ci\nNEXT_PUBLIC_SITE_URL=\nNEXT_PUBLIC_SUPPORT_EMAIL=ci@example.com\n' > apps/web/.env
           pnpm --filter @maven-ai/web build
 
   # The Python grader is the other half of coding-round correctness and was
