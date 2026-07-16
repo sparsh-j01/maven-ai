@@ -242,7 +242,12 @@ export default function InterviewRoomPage() {
       // candidate is redirected as though it worked. res.json() on a plain-text 401 or
       // an HTML 500 throws straight into the catch, which is how it stayed invisible.
       if (!res.ok) {
-        setDetail(await errorMessage(res, "Couldn't end the interview."));
+        const message = await errorMessage(res, "Couldn't end the interview.");
+        // Ending failed, so this component stays mounted on the error screen — the
+        // effect cleanup that normally disconnects never runs. Leave the room here or
+        // a late-joining agent talks over the error and the room burns LiveKit minutes.
+        await room.disconnect().catch(() => {});
+        setDetail(message);
         setState("error");
         setLeaving(false);
         return;
@@ -250,6 +255,7 @@ export default function InterviewRoomPage() {
       const { scored } = (await res.json()) as { scored?: boolean };
       window.location.href = scored ? `/interview/${id}/report` : "/dashboard";
     } catch {
+      await room.disconnect().catch(() => {});
       setDetail(
         "Couldn't end the interview — check your connection and try again.",
       );
