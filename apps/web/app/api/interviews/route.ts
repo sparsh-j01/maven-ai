@@ -57,23 +57,24 @@ export async function POST(req: Request) {
   }
 
   // Mirror Clerk identity on first write; the gateway webhook keeps users.plan in sync.
+  // An interview doesn't need an email, so a user without one in Clerk still gets a row
+  // (users.email is NOT NULL — "" is the only option). But that "" must not be permanent:
+  // upsert the address whenever Clerk has one, so it heals on the next write instead of
+  // following the account forever. coalesce/nullif keeps a good stored email when this
+  // request is the one with nothing to offer — never clobber a real address with "".
   const user = await currentUser();
-  const email = user?.emailAddresses[0]?.emailAddress ?? "";
+  const email = user?.emailAddresses[0]?.emailAddress?.trim() ?? "";
+  // DoUpdate always returns the row, so unlike DoNothing there's no second read to fold
+  // in the existing-user case.
   const [row] = await db
     .insert(users)
     .values({ id: userId, email })
-    .onConflictDoNothing()
+    .onConflictDoUpdate({
+      target: users.id,
+      set: { email: sql`coalesce(nullif(excluded.email, ''), ${users.email})` },
+    })
     .returning({ plan: users.plan });
-  // onConflictDoNothing returns nothing on an existing row — read the plan back.
-  const userPlan =
-    row?.plan ??
-    (
-      await db
-        .select({ plan: users.plan })
-        .from(users)
-        .where(eq(users.id, userId))
-    )[0]?.plan ??
-    "free";
+  const userPlan = row?.plan ?? "free";
 
   // Entitlement gate: monthly quota by plan, checked before the metered call so an
   // over-quota request costs nothing. UNBILLED_STATUSES is the rule (shared with the

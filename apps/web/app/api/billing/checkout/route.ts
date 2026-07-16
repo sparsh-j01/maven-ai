@@ -26,7 +26,17 @@ export async function POST(_req: Request) {
   }
 
   const user = await currentUser();
-  const email = user?.emailAddresses[0]?.emailAddress;
+  const email = user?.emailAddresses[0]?.emailAddress?.trim();
+  // No email, no checkout. It's the address Razorpay puts on the receipt, and it's what
+  // the users row below is created with — users.email is NOT NULL, so a missing one
+  // would be written as "" and then kept forever by the upsert. Fail before any of that
+  // and before we've asked Razorpay for anything.
+  if (!email) {
+    return new Response(
+      "Add an email address to your account before subscribing.",
+      { status: 400 },
+    );
+  }
 
   const jar = await cookies();
   const cycleRaw = jar.get("pref_cycle")?.value;
@@ -53,10 +63,13 @@ export async function POST(_req: Request) {
   // users row yet — the insert FK-violates, the webhook 500s, and Razorpay retries it
   // forever: money taken, never upgraded. users.email is NOT NULL so the webhook can't
   // create the row (it has no email); checkout has the email, so it does it here.
+  // Refresh rather than DoNothing: a row created by the interviews route before the user
+  // had an email in Clerk holds "", and DoNothing would leave the paying customer's
+  // account permanently blank. Guarded above, so `email` here is never itself blank.
   await getDb()
     .insert(users)
-    .values({ id: userId, email: email ?? "" })
-    .onConflictDoNothing();
+    .values({ id: userId, email })
+    .onConflictDoUpdate({ target: users.id, set: { email } });
 
   try {
     const url = await createProSubscription(userId, planId, totalCount, email);
