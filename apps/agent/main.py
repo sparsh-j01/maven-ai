@@ -48,6 +48,10 @@ from telemetry import setup_langfuse
 # per interview so one session can't push huge payloads or hammer the sandbox.
 MAX_CODE_BYTES = 20_000
 MAX_RUNS = 25
+# Trim stdout/stderr before broadcasting run_result. LiveKit drops an oversized reliable
+# data packet silently, so an infinite-loop or huge-output program would publish nothing
+# and the candidate would just see the client's "no response" timeout instead of a result.
+MAX_RESULT_CHARS = 4_000
 
 # Hard wall-clock cap on the live voice loop (spend cap, §8.1): a single session
 # can't burn STT/LLM/TTS + SFU minutes past this, no matter what. The LiveKit
@@ -437,11 +441,13 @@ class InterviewAgent(Agent):
         await self._persist_submission(language, code, stdout, passed)
         self._last_run = {"passed": passed, "status": status}
         logger.info("run_code passed=%s status=%s", passed, status)
+        # Grading already ran on the full stdout above; only the published copy is
+        # capped, so a big output can't blow past the data-channel packet limit.
         return {
             "ok": True,
             "passed": passed,
-            "stdout": stdout,
-            "stderr": stderr.strip(),
+            "stdout": stdout[:MAX_RESULT_CHARS],
+            "stderr": stderr.strip()[:MAX_RESULT_CHARS],
             "status": status,
         }
 
@@ -543,6 +549,24 @@ async def _read_cursor(db: Optional[asyncpg.Connection], interview_id: uuid.UUID
     return int(row["plan_cursor"])
 
 
+async def _read_max_offset(
+    db: Optional[asyncpg.Connection], interview_id: uuid.UUID
+) -> int:
+    """The largest ts_end_ms already stored for this interview, so a resumed session
+    continues the transcript clock past the earlier turns instead of restarting at 0."""
+    if not db:
+        return 0
+    try:
+        row = await db.fetchrow(
+            "SELECT max(ts_end_ms) AS m FROM interview_turns WHERE interview_id = $1",
+            interview_id,
+        )
+    except Exception:
+        logger.exception("max-offset read failed — transcript offsets restart at 0")
+        return 0
+    return int(row["m"]) if row and row["m"] is not None else 0
+
+
 async def entrypoint(ctx: JobContext) -> None:
     setup_langfuse()  # export session traces to Langfuse (no-op if unconfigured)
     await ctx.connect()
@@ -583,6 +607,15 @@ async def entrypoint(ctx: JobContext) -> None:
         interview_id=interview_id,
         room=ctx.room,
     )
+    # Resume: continue the transcript clock past the turns already stored. Left at 0, a
+    # resumed session's turns get offsets starting near 0 and the scorer (which orders by
+    # ts_start_ms) reads them BEFORE the pre-resume turns, scrambling the transcript.
+    # ponytail: seek precision after a resume gap is approximate; turn ORDER is exact,
+    # which is all the scorer and report reader need.
+    max_offset = await _read_max_offset(db, interview_id)
+    if max_offset:
+        agent._last_offset = max_offset
+        agent._start_ms = time.monotonic() * 1000 - max_offset
     session = _make_session(keyterms=keyterms(meta))
 
     # asyncio only holds weak references to tasks, so a bare create_task() can be
