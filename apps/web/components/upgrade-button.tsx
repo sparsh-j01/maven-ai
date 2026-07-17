@@ -1,8 +1,8 @@
 "use client";
 
+import { errorMessage } from "@maven-ai/shared";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { errorMessage } from "@/lib/http";
 
 export function UpgradeButton() {
   const [loading, setLoading] = useState(false);

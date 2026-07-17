@@ -23,7 +23,7 @@ import {
   SCORER_TEMPERATURE,
   SCORER_TIMEOUT_MS,
 } from "@maven-ai/shared/models";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, lt } from "drizzle-orm";
 import { inngest } from "./inngest";
 
 // Model + temperature come from the shared config so this and the eval grader
@@ -187,6 +187,11 @@ export const scoreInterview = inngest.createFunction(
     id: "score-interview",
     retries: 2,
     triggers: [{ event: "interview/ended" }],
+    // Serialize per interview. The Leave route and the report-page kicker (and the cron
+    // backstop below) can all fire `interview/ended` for the same id; the hasReport
+    // guard alone is TOCTOU — two runs both read "no report", both call Gemini, both
+    // write. limit:1 keyed on the id makes the second run see the first's report and skip.
+    concurrency: { limit: 1, key: "event.data.interviewId" },
     onFailure: async ({ event }) => {
       const id = failedInterviewId(event);
       if (id) await markFailed(id);
@@ -213,6 +218,38 @@ export const scoreInterview = inngest.createFunction(
       : report;
     await step.run("persist", () => writeReport(interviewId, finalReport));
     return { ok: true, overallScore: finalReport.overallScore };
+  },
+);
+
+// Backstop for interviews stranded in `processing`. A row reaches `processing` two
+// ways: the Leave route (which also enqueues the scorer) and the agent finalizing on
+// natural completion / the hard time cap (which sets the status but does NOT enqueue —
+// scoring is kicked only when the report page opens). Close the tab before the report
+// loads and that second path leaves the row processing with no job, no report, ever.
+// This cron re-enqueues any processing row past a grace window; the scorer's hasReport
+// guard + the per-interview concurrency key make a redundant re-enqueue a no-op.
+export const backstopStuckScoring = inngest.createFunction(
+  { id: "backstop-stuck-scoring", triggers: [{ cron: "*/10 * * * *" }] },
+  async ({ step }) => {
+    // 10 min is well past the scorer's worst case (SCORER_TIMEOUT_MS × 3 retries), so a
+    // row this old is genuinely stuck, not mid-grade.
+    const cutoff = new Date(Date.now() - 10 * 60 * 1000);
+    const stuck = await step.run("find-stuck", () =>
+      getDb()
+        .select({ id: interviews.id })
+        .from(interviews)
+        .where(
+          and(eq(interviews.status, "processing"), lt(interviews.endedAt, cutoff)),
+        )
+        .limit(100),
+    );
+    for (const { id } of stuck) {
+      await step.sendEvent(`rescore-${id}`, {
+        name: "interview/ended",
+        data: { interviewId: id },
+      });
+    }
+    return { requeued: stuck.length };
   },
 );
 

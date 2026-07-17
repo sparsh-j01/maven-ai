@@ -1,9 +1,9 @@
 "use client";
 
+import { errorMessage } from "@maven-ai/shared";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { errorMessage } from "@/lib/http";
 
 // Kick the durable scorer. This used to be `.catch(() => {})` with no res.ok check,
 // so every failure — network, 500, 401 — resolved successfully and the caller could

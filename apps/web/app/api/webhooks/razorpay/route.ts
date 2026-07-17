@@ -1,5 +1,5 @@
 import { getDb, subscriptions, users } from "@maven-ai/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { verifyWebhook } from "@/lib/razorpay";
 
 // Unauthenticated by design: Razorpay calls this directly, the HMAC signature is the auth.
@@ -59,14 +59,29 @@ export async function POST(req: Request) {
     case "subscription.cancelled":
     case "subscription.completed": {
       await db.transaction(async (tx) => {
+        // Scope the downgrade to the subscription this event is actually ABOUT.
+        // subscriptions.userId is the primary key, so there is exactly one row per
+        // user — and Razorpay retries deliveries for hours and can duplicate them.
+        // Keyed on userId alone, a redelivered "cancelled" for a subscription the
+        // user has since REPLACED would downgrade them off the new one they are
+        // actively being charged for, and leave them capped at the free tier until
+        // the next charged event, up to a month later. Matching stripeSubId makes a
+        // stale cancel a no-op instead.
+        const hit = await tx
+          .update(subscriptions)
+          .set({ status: sub.status })
+          .where(
+            and(
+              eq(subscriptions.userId, userId),
+              eq(subscriptions.stripeSubId, sub.id),
+            ),
+          )
+          .returning({ userId: subscriptions.userId });
+        if (hit.length === 0) return; // stale event, for a subscription we no longer hold
         await tx
           .update(users)
           .set({ plan: "free" })
           .where(eq(users.id, userId));
-        await tx
-          .update(subscriptions)
-          .set({ status: sub.status })
-          .where(eq(subscriptions.userId, userId));
       });
       break;
     }

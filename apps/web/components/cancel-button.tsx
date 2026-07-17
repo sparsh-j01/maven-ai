@@ -1,9 +1,9 @@
 "use client";
 
+import { errorMessage } from "@maven-ai/shared";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { errorMessage } from "@/lib/http";
 
 export function CancelButton() {
   const router = useRouter();
