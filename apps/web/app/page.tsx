@@ -1,13 +1,14 @@
-import { SignedIn, SignedOut, SignInButton, SignUpButton } from "@clerk/nextjs";
 import {
   REGION_PRICING,
   isCycle,
   regionForCountry,
 } from "@maven-ai/shared";
+import { auth } from "@clerk/nextjs/server";
 import { Check, ChevronDown } from "lucide-react";
 import { cookies, headers } from "next/headers";
 import { SUPPORT_EMAIL, mailto } from "@/lib/contact";
 import Link from "next/link";
+import { NavAuth, StartFreeCta } from "@/components/auth-buttons";
 import { HeroDesk } from "@/components/hero-desk";
 import { HowItWorks } from "@/components/how-it-works";
 import { ScrollReveals } from "@/components/scroll-reveals";
@@ -211,6 +212,9 @@ function SocialLinks() {
 
 
 export default async function LandingPage() {
+  // Resolve auth here so the nav/CTA render signed-in or signed-out state straight
+  // into the HTML. See auth-buttons.tsx for why this isn't <SignedIn>/<SignedOut>.
+  const { userId } = await auth();
   // Region-aware pricing from geo only: IN → ₹, else $. No manual currency switch.
   const jar = await cookies();
   const country = (await headers()).get("x-vercel-ip-country");
@@ -244,33 +248,17 @@ export default async function LandingPage() {
             </div>
 
             <div className="flex items-center justify-end gap-2 sm:gap-3">
-              <SignedOut>
-                <SignInButton mode="modal">
-                  <button className={`hidden sm:inline-flex ${navLink}`}>
-                    Sign in
-                  </button>
-                </SignInButton>
-                <SignUpButton mode="modal">
-                  <button className={navCta}>Start for free</button>
-                </SignUpButton>
-              </SignedOut>
-              <SignedIn>
-                <Link
-                  href="/dashboard"
-                  className={`hidden sm:inline-flex ${navLink}`}
-                >
-                  Dashboard
-                </Link>
-                <Link href="/interview/new" className={navCta}>
-                  New interview
-                </Link>
-              </SignedIn>
+              <NavAuth
+                signedIn={!!userId}
+                linkClass={navLink}
+                ctaClass={navCta}
+              />
               <ThemeToggle />
             </div>
           </nav>
         </header>
 
-        <HeroDesk />
+        <HeroDesk signedIn={!!userId} />
 
         {/* editorial credibility rule */}
         <div className="-mx-6 border-b border-hair px-6">
@@ -416,16 +404,7 @@ export default async function LandingPage() {
             </h2>
             <p className="mt-3 text-lg text-muted">Practice with AI today.</p>
             <div className="mt-8 flex justify-center">
-              <SignedOut>
-                <SignUpButton mode="modal">
-                  <button className={cta}>Start Free</button>
-                </SignUpButton>
-              </SignedOut>
-              <SignedIn>
-                <Link href="/interview/new" className={cta}>
-                  Start Free
-                </Link>
-              </SignedIn>
+              <StartFreeCta signedIn={!!userId} ctaClass={cta} />
             </div>
           </div>
         </section>

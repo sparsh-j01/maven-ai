@@ -1,6 +1,6 @@
 "use client";
 
-import { SignedIn, SignedOut, SignUpButton } from "@clerk/nextjs";
+import { SignUpButton } from "@clerk/nextjs";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -20,7 +20,11 @@ const RUBRIC = [
   { label: "Problem solving", w: "74%", v: "7.4" },
 ] as const;
 
-export function HeroDesk() {
+// signedIn comes from the caller's server-side auth() so the CTA renders straight into
+// the HTML. Branching on client <SignedIn>/<SignedOut> here would drop it out of SSR and
+// pop it in on hydration — and a Clerk button under those wrappers 500s anyway. See
+// apps/web/components/auth-buttons.tsx.
+export function HeroDesk({ signedIn }: { signedIn: boolean }) {
   const root = useRef<HTMLDivElement>(null);
 
   useGSAP(
@@ -134,21 +138,20 @@ export function HeroDesk() {
             line by line.</b>
           </p>
           <div className="hd-cta mt-8 flex flex-wrap items-center gap-6">
-            <SignedOut>
-              <SignUpButton mode="modal">
-                <button className={`hd-magnetic ${buttonVariants({ variant: "accent", size: "lg" })}`}>
-                  Start a free interview
-                </button>
-              </SignUpButton>
-            </SignedOut>
-            <SignedIn>
+            {signedIn ? (
               <Link
                 href="/interview/new"
                 className={`hd-magnetic ${buttonVariants({ variant: "accent", size: "lg" })}`}
               >
                 Start a new interview
               </Link>
-            </SignedIn>
+            ) : (
+              <SignUpButton mode="modal">
+                <button className={`hd-magnetic ${buttonVariants({ variant: "accent", size: "lg" })}`}>
+                  Start a free interview
+                </button>
+              </SignUpButton>
+            )}
             <a href="#how" className="group text-sm text-fg">
               Read how it works{" "}
               <span className="inline-block transition-transform group-hover:translate-x-1">→</span>
