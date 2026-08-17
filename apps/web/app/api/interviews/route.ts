@@ -30,7 +30,7 @@ const createInput = z.object({
   jdText: z.string().trim().max(5000).optional(),
 });
 
-// Create a session row (status `provisioning`) with a generated, phased question plan.
+// Create a session row (status `requested`); the plan is generated at approval.
 export async function POST(req: Request) {
   const { userId } = await auth();
   if (!userId) return new Response("Unauthorized", { status: 401 });
@@ -39,84 +39,106 @@ export async function POST(req: Request) {
   if (!parsed.success) return new Response("Invalid interview setup", { status: 400 });
   const { role, company, companyType: coType, seniority: sen, type, resumeText, jdText } = parsed.data;
 
-  const db = getDb();
-
-  // Rate limit before the metered plan-generation call below.
-  const since = new Date(Date.now() - 60 * 60 * 1000);
-  const [recent] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(interviews)
-    .where(and(eq(interviews.userId, userId), gte(interviews.createdAt, since)));
-  if ((recent?.count ?? 0) >= MAX_INTERVIEWS_PER_HOUR) {
-    return new Response("Too many interviews started — try again in a bit.", {
-      status: 429,
-    });
-  }
-
-  // Mirror Clerk identity on first write; the gateway webhook keeps users.plan in sync.
-  // An interview doesn't need an email, so a user without one in Clerk still gets a row
-  // (users.email is NOT NULL — "" is the only option). But that "" must not be permanent:
-  // upsert the address whenever Clerk has one, so it heals on the next write instead of
-  // following the account forever. coalesce/nullif keeps a good stored email when this
-  // request is the one with nothing to offer — never clobber a real address with "".
+  // Clerk identity is fetched BEFORE the transaction below: this is an HTTP round-trip
+  // to Clerk, and holding a database lock across a network call to a third party turns
+  // their latency into our serialization.
   const user = await currentUser();
   const email = user?.emailAddresses[0]?.emailAddress?.trim() ?? "";
-  // DoUpdate always returns the row, so unlike DoNothing there's no second read to fold
-  // in the existing-user case.
-  const [row] = await db
-    .insert(users)
-    .values({ id: userId, email })
-    .onConflictDoUpdate({
-      target: users.id,
-      set: { email: sql`coalesce(nullif(excluded.email, ''), ${users.email})` },
-    })
-    .returning({ plan: users.plan });
-  const userPlan = row?.plan ?? "free";
 
-  // Entitlement gate: monthly quota by plan, checked before the metered call so an
-  // over-quota request costs nothing. UNBILLED_STATUSES is the rule (shared with the
-  // dashboard): an interview we never approved, or one that failed on our side, does
-  // not spend a slot — otherwise a free user burns all three on interviews that never
-  // happened, and can't retry until the 1st.
-  const [usage] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(interviews)
-    .where(
-      and(
-        eq(interviews.userId, userId),
-        gte(interviews.createdAt, monthStart()),
-        notInArray(interviews.status, [...UNBILLED_STATUSES]),
-      ),
-    );
-  if ((usage?.count ?? 0) >= monthlyInterviewLimit(userPlan)) {
-    return new Response(
-      "Monthly interview limit reached — upgrade to Pro for more.",
-      { status: 402 },
-    );
+  const db = getDb();
+  const since = new Date(Date.now() - 60 * 60 * 1000);
+
+  // Both gates below are read-then-write, and that gap is the whole problem: N requests
+  // arriving together all run their COUNT before any of them INSERTs, so all N read the
+  // same pre-insert total, all N pass, and all N write. Either cap then bound only the
+  // callers who politely waited their turn — one account firing concurrently could put in
+  // as many rows as it liked, which is exactly the shape an abusive client takes.
+  //
+  // So take a per-user lock and do check-then-write with nobody in between. hashtext()
+  // maps the Clerk id onto the bigint the lock is keyed by; distinct users hash to
+  // distinct keys and never contend. The _xact_ variant releases on commit AND on
+  // rollback, so there is no unlock path to leak.
+  const outcome = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}))`);
+
+    const [recent] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(interviews)
+      .where(and(eq(interviews.userId, userId), gte(interviews.createdAt, since)));
+    if ((recent?.count ?? 0) >= MAX_INTERVIEWS_PER_HOUR) {
+      return {
+        error: "Too many interviews started — try again in a bit.",
+        status: 429,
+      } as const;
+    }
+
+    // Mirror Clerk identity on first write; the gateway webhook keeps users.plan in sync.
+    // An interview doesn't need an email, so a user without one in Clerk still gets a row
+    // (users.email is NOT NULL — "" is the only option). But that "" must not be permanent:
+    // upsert the address whenever Clerk has one, so it heals on the next write instead of
+    // following the account forever. coalesce/nullif keeps a good stored email when this
+    // request is the one with nothing to offer — never clobber a real address with "".
+    // DoUpdate always returns the row, so unlike DoNothing there's no second read to fold
+    // in the existing-user case.
+    const [row] = await tx
+      .insert(users)
+      .values({ id: userId, email })
+      .onConflictDoUpdate({
+        target: users.id,
+        set: { email: sql`coalesce(nullif(excluded.email, ''), ${users.email})` },
+      })
+      .returning({ plan: users.plan });
+    const userPlan = row?.plan ?? "free";
+
+    // Entitlement gate: monthly quota by plan. UNBILLED_STATUSES is the rule (shared with
+    // the dashboard): an interview we never approved, or one that failed on our side, does
+    // not spend a slot — otherwise a free user burns all three on interviews that never
+    // happened, and can't retry until the 1st.
+    const [usage] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(interviews)
+      .where(
+        and(
+          eq(interviews.userId, userId),
+          gte(interviews.createdAt, monthStart()),
+          notInArray(interviews.status, [...UNBILLED_STATUSES]),
+        ),
+      );
+    if ((usage?.count ?? 0) >= monthlyInterviewLimit(userPlan)) {
+      return {
+        error: "Monthly interview limit reached — upgrade to Pro for more.",
+        status: 402,
+      } as const;
+    }
+
+    // No plan yet — the request is just a row until an admin approves it, and the approve
+    // route generates plan_json then. /token only ever runs on an approved row, so the
+    // plan is always present by the time anything reads it.
+    const [iv] = await tx
+      .insert(interviews)
+      .values({
+        userId,
+        role,
+        company: company || null,
+        companyType: coType || null,
+        seniority: sen,
+        type,
+        resumeText: resumeText || null,
+        jdText: jdText || null,
+        // Spend gate: the candidate can set up a request for free, but the interview
+        // waits in `requested` until an admin approves it — only then is a plan
+        // generated, and only then can /token mint a LiveKit token and start the
+        // (costly) live voice session.
+        status: "requested",
+        currentPhase: "intro",
+      })
+      .returning({ id: interviews.id });
+
+    return { id: iv!.id } as const;
+  });
+
+  if ("error" in outcome) {
+    return new Response(outcome.error, { status: outcome.status });
   }
-
-  // No plan yet — the request is just a row until an admin approves it, and the approve
-  // route generates plan_json then. /token only ever runs on an approved row, so the
-  // plan is always present by the time anything reads it.
-  const [iv] = await db
-    .insert(interviews)
-    .values({
-      userId,
-      role,
-      company: company || null,
-      companyType: coType || null,
-      seniority: sen,
-      type,
-      resumeText: resumeText || null,
-      jdText: jdText || null,
-      // Spend gate: the candidate can set up a request for free, but the interview
-      // waits in `requested` until an admin approves it — only then is a plan
-      // generated, and only then can /token mint a LiveKit token and start the
-      // (costly) live voice session.
-      status: "requested",
-      currentPhase: "intro",
-    })
-    .returning({ id: interviews.id });
-
-  return Response.json({ id: iv!.id });
+  return Response.json({ id: outcome.id });
 }
