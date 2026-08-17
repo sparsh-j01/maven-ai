@@ -10,14 +10,11 @@ import {
 } from "@maven-ai/shared";
 import { and, eq, gte, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
-import { personalizePlan } from "@/lib/personalize-plan";
 
-// personalizePlan runs retrieval (embed, 8s cap) and THEN the plan LLM (7s cap),
-// sequentially — ~15s worst case, past Vercel's 10s default. 60s is the Hobby ceiling.
-export const maxDuration = 60;
-
-// Per-user creation cap (spend cap): one account can't loop this endpoint to burn
-// Gemini plan-generation calls. Rolling 1-hour window off the (user_id, created_at) index.
+// Per-user creation cap: one account can't loop this endpoint to fill the admin queue
+// with junk. Rolling 1-hour window off the (user_id, created_at) index. This is no
+// longer a spend cap — nothing metered runs here any more — so it only has to bound
+// rows, not cost.
 const MAX_INTERVIEWS_PER_HOUR = 10;
 
 // role/seniority/type drive plan generation; company is optional flavour; companyType
@@ -98,18 +95,9 @@ export async function POST(req: Request) {
     );
   }
 
-  // Generate the phased plan and persist as plan_json. With a résumé/JD, an LLM
-  // personalizes which bank questions to ask, grounded with a deterministic fallback.
-  const plan = await personalizePlan({
-    role,
-    seniority: sen,
-    type,
-    company,
-    companyType: coType,
-    resumeText,
-    jdText,
-  });
-
+  // No plan yet — the request is just a row until an admin approves it, and the approve
+  // route generates plan_json then. /token only ever runs on an approved row, so the
+  // plan is always present by the time anything reads it.
   const [iv] = await db
     .insert(interviews)
     .values({
@@ -121,11 +109,11 @@ export async function POST(req: Request) {
       type,
       resumeText: resumeText || null,
       jdText: jdText || null,
-      // Spend gate: the candidate can set up + generate a plan for free, but the
-      // interview waits in `requested` until an admin approves it — only then can
-      // /token mint a LiveKit token and start the (costly) live voice session.
+      // Spend gate: the candidate can set up a request for free, but the interview
+      // waits in `requested` until an admin approves it — only then is a plan
+      // generated, and only then can /token mint a LiveKit token and start the
+      // (costly) live voice session.
       status: "requested",
-      planJson: plan,
       currentPhase: "intro",
     })
     .returning({ id: interviews.id });
