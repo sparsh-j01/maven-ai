@@ -93,9 +93,6 @@ importers:
       react-dom:
         specifier: ^19.0.0
         version: 19.2.7(react@19.2.7)
-      shadcn:
-        specifier: ^4.13.0
-        version: 4.13.0(typescript@5.9.3)
       tailwind-merge:
         specifier: ^2.6.0
         version: 2.6.1
@@ -127,6 +124,9 @@ importers:
       postcss:
         specifier: ^8.5.10
         version: 8.5.15
+      shadcn:
+        specifier: ^4.13.0
+        version: 4.13.0(typescript@5.9.3)
       tailwindcss:
         specifier: ^3.4.17
         version: 3.4.19(tsx@4.22.4)(yaml@2.9.0)
