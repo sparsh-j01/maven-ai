@@ -1,0 +1,28 @@
+%%{init: {'theme':'base','themeVariables':{'background':'#F6F5F2','primaryColor':'#FFFFFF','primaryTextColor':'#17171A','primaryBorderColor':'#C9C7C1','lineColor':'#8B8880','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'15px'}}}%%
+graph TD
+  B["Browser<br/>Next.js · LiveKit SDK · Monaco"]
+  BFF["Next.js BFF / API<br/>Vercel · Clerk · Razorpay"]
+  SFU["LiveKit SFU<br/>media transport"]
+  AG["Voice Agent<br/>Python · Fly.io<br/>STT → LLM → TTS"]
+  J0["Judge0<br/>sandboxed code exec"]
+  ING["Inngest<br/>async scorer"]
+  DB[("Postgres + pgvector<br/>Neon")]
+  R2[("Cloudflare R2<br/>resumes")]
+
+  B -->|"HTTPS · REST"| BFF
+  BFF -->|"short-lived room token"| B
+  B <-->|"WebRTC audio + data"| SFU
+  SFU <-->|"agent joins the room"| AG
+  AG -->|"run_code"| J0
+  AG -->|"turns + cursor"| DB
+  BFF -->|"interviews · reports"| DB
+  BFF -->|"resume PDFs"| R2
+  BFF -->|"on end: enqueue"| ING
+  ING -->|"grades transcript"| DB
+
+  classDef edge fill:#FFFFFF,stroke:#C9C7C1,color:#17171A
+  classDef core fill:#EEF2FE,stroke:#1F49DE,color:#17171A
+  classDef store fill:#F1F0EC,stroke:#B4B1A9,color:#17171A
+  class B,SFU,J0,ING edge
+  class BFF,AG core
+  class DB,R2 store
