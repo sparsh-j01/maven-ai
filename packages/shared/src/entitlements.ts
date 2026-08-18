@@ -1,9 +1,23 @@
 export type Plan = "free" | "pro";
 
 // free gets a taste, pro is unlimited. Infinity so the `count >= limit` gate never trips for pro.
-export const PLAN_LIMITS: Record<Plan, { monthlyInterviews: number }> = {
-  free: { monthlyInterviews: 3 },
-  pro: { monthlyInterviews: Infinity },
+//
+// pendingRequests is a different KIND of limit from monthlyInterviews and the two should
+// not be read as a pair. monthlyInterviews is consumption — it resets on the 1st and is
+// what the user is paying for. pendingRequests is queue depth: how many un-approved
+// requests one account may leave sitting in the admin queue at once. It is not spent and
+// it does not reset on a clock; approving a request is the only thing that frees a slot.
+//
+// So pro is NOT unlimited here even though it is unlimited on monthlyInterviews. The
+// queue is an admin's attention, not a resource the user bought, and an unbounded queue
+// depth would hand any single Pro account the ability to bury the approval page. Pro gets
+// more room to line work up; it does not get to make the queue meaningless.
+export const PLAN_LIMITS: Record<
+  Plan,
+  { monthlyInterviews: number; pendingRequests: number }
+> = {
+  free: { monthlyInterviews: 3, pendingRequests: 3 },
+  pro: { monthlyInterviews: Infinity, pendingRequests: 10 },
 };
 
 export function isPlan(value: string): value is Plan {
@@ -14,6 +28,11 @@ export function isPlan(value: string): value is Plan {
 export function monthlyInterviewLimit(plan: string): number {
   return (isPlan(plan) ? PLAN_LIMITS[plan] : PLAN_LIMITS.free)
     .monthlyInterviews;
+}
+
+// Same fail-closed rule: an unrecognised plan gets the free ceiling, never the pro one.
+export function pendingRequestLimit(plan: string): number {
+  return (isPlan(plan) ? PLAN_LIMITS[plan] : PLAN_LIMITS.free).pendingRequests;
 }
 
 export function isUnlimited(plan: string): boolean {

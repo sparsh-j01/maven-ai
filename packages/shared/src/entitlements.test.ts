@@ -4,6 +4,7 @@ import {
   isUnlimited,
   monthStart,
   monthlyInterviewLimit,
+  pendingRequestLimit,
 } from "./entitlements";
 
 describe("entitlements", () => {
@@ -21,6 +22,24 @@ describe("entitlements", () => {
     expect(isUnlimited("pro")).toBe(true);
     expect(isUnlimited("free")).toBe(false);
     expect(isUnlimited("enterprise")).toBe(false);
+  });
+
+  it("gives pro a bigger pending-request ceiling than free", () => {
+    expect(pendingRequestLimit("free")).toBe(3);
+    expect(pendingRequestLimit("pro")).toBe(10);
+  });
+
+  it("fails closed to the free ceiling on an unknown plan", () => {
+    expect(pendingRequestLimit("enterprise")).toBe(3);
+    expect(pendingRequestLimit("")).toBe(3);
+  });
+
+  // Queue depth is admin attention, not a resource the user bought — so unlike the
+  // monthly quota, pro must stay FINITE here. Infinity would let one Pro account bury
+  // the approval page, and the `count >= limit` gate would never trip to stop it.
+  it("keeps the pending ceiling finite on every plan, including pro", () => {
+    expect(Number.isFinite(pendingRequestLimit("pro"))).toBe(true);
+    expect(Number.isFinite(pendingRequestLimit("free"))).toBe(true);
   });
 
   it("monthStart is midnight UTC on the 1st", () => {
