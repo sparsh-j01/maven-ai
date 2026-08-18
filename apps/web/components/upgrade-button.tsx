@@ -1,10 +1,15 @@
 "use client";
 
-import { errorMessage } from "@maven-ai/shared";
+import { type BillingCycle, errorMessage } from "@maven-ai/shared";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
-export function UpgradeButton() {
+// `cycle` is display-only — the checkout route reads the pref_cycle cookie, which is the
+// authority, and this just names it. Passing it in makes the button say what it is about
+// to charge: the cookie is set on the landing page's pricing toggle, so a user who signed
+// up and came straight here would otherwise click "Upgrade to Pro" with no idea whether
+// that meant monthly or annual. Omit it and the label stays generic.
+export function UpgradeButton({ cycle }: { cycle?: BillingCycle }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,7 +38,11 @@ export function UpgradeButton() {
   return (
     <span className="flex flex-col items-end gap-1">
       <Button variant="accent" onClick={upgrade} disabled={loading}>
-        {loading ? "Redirecting…" : "Upgrade to Pro"}
+        {loading
+          ? "Redirecting…"
+          : cycle
+            ? `Upgrade to Pro — ${cycle === "annual" ? "Annual" : "Monthly"}`
+            : "Upgrade to Pro"}
       </Button>
       {error ? <span className="text-xs text-danger">{error}</span> : null}
     </span>

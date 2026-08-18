@@ -7,10 +7,12 @@ import {
   subscriptions,
   users,
 } from "@maven-ai/db";
-import { monthStart, PLAN_LIMITS, UNBILLED_STATUSES } from "@maven-ai/shared";
+import { isCycle, monthStart, PLAN_LIMITS, UNBILLED_STATUSES } from "@maven-ai/shared";
 import { and, desc, eq, gte, notInArray, sql } from "drizzle-orm";
+import { cookies } from "next/headers";
 import Link from "next/link";
 import { TopBar } from "@/components/top-bar";
+import { PrefToggle } from "@/components/pref-toggle";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CancelButton } from "@/components/cancel-button";
@@ -149,6 +151,14 @@ export default async function DashboardPage({
   const unlimited = !Number.isFinite(limit);
   const usagePct = Math.min(100, Math.round((usedThisMonth / limit) * 100));
   const atLimit = usedThisMonth >= limit;
+
+  // Billing cycle for the upgrade CTAs below. The checkout route reads this same cookie,
+  // but until now ONLY the landing page's pricing toggle ever wrote it — so someone who
+  // signed up and came straight to the dashboard had no cookie, silently got billed
+  // monthly, and had no way to choose annual without going back to the marketing page.
+  // Read it here too, show which cycle the button will charge, and let them switch.
+  const cycleRaw = (await cookies()).get("pref_cycle")?.value;
+  const cycle = cycleRaw && isCycle(cycleRaw) ? cycleRaw : "monthly";
   const latestScore = trend.length
     ? Math.round(trend[trend.length - 1]!)
     : null;
@@ -158,7 +168,7 @@ export default async function DashboardPage({
       <TopBar
         right={
           <>
-            {!isPro && <UpgradeButton />}
+            {!isPro && <UpgradeButton cycle={cycle} />}
             {isPro && !cancelling && <CancelButton />}
             <UserButton />
           </>
@@ -195,9 +205,21 @@ export default async function DashboardPage({
           </h1>
         </div>
         {/* At the free cap, the primary CTA goes straight to Razorpay checkout
-            instead of a setup form the API would 402. */}
+            instead of a setup form the API would 402. This is the real conversion
+            moment, so the cycle choice sits next to the button rather than only on
+            the marketing page — picking one rewrites the cookie checkout reads. */}
         {atLimit && !isPro ? (
-          <UpgradeButton />
+          <span className="flex flex-wrap items-center justify-end gap-3">
+            <PrefToggle
+              cookie="pref_cycle"
+              current={cycle}
+              options={[
+                { value: "monthly", label: "Monthly" },
+                { value: "annual", label: "Annual" },
+              ]}
+            />
+            <UpgradeButton cycle={cycle} />
+          </span>
         ) : (
           <Link
             href="/interview/new"
