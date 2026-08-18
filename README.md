@@ -1,29 +1,35 @@
-# Maven AI
+<h1 align="center">Maven</h1>
 
-Real-time, voice-based mock interviews. Pick a role, talk to a low-latency voice
-interviewer that takes clean turns and asks adaptive follow-ups, run a live
-coding round, and get a rubric-scored feedback report with a replayable
-transcript.
+<p align="center">
+  <b>Real-time, voice-based mock interviews.</b><br/>
+  Talk to a low-latency voice interviewer that takes clean turns and asks adaptive
+  follow-ups, run a live coding round, and get a rubric-scored report with the full transcript.
+</p>
 
-> **Status:** in active development. The monorepo, database schema, shared
-> contracts, auth, web shell, the live turn-based voice loop, the plan-driven
-> interview state machine, the async scored feedback report (rubric radar +
-> transcript), the live coding round (Monaco + Judge0 sandbox), resume-driven
-> RAG personalization, Razorpay billing (monthly/annual) with plan entitlements,
-> and admin-approved interview requests — plus Sentry + Langfuse
-> observability, a scorer eval harness, CI, and a full "Viva Glass" design
-> pass across the app (glass design system, animated landing hero, loading
-> skeletons, error/empty and not-found states, legal pages, location-based
-> pricing, enforced CSP) — are in place.
+<p align="center">
+  <a href="https://github.com/sparsh-j01/maven-ai/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/sparsh-j01/maven-ai/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="Next.js 15" src="https://img.shields.io/badge/Next.js-15-000">
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5-3178C6">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.12-3776AB">
+  <img alt="LiveKit" src="https://img.shields.io/badge/LiveKit-WebRTC-FF6352">
+  <img alt="Postgres" src="https://img.shields.io/badge/Postgres-pgvector-336791">
+</p>
 
 ## Why this exists
 
-Most "AI interview" demos are a text box wired to a chat completion. Maven AI is
+Most "AI interview" demos are a text box wired to a chat completion. Maven is
 built the way a production voice product actually is: a long-lived stateful voice
 worker separate from the serverless web app, a turn-based audio pipeline over
 WebRTC, a state machine driven by tool-use, and an async scoring job that grades
 the transcript after the call. The interesting engineering is the real-time loop
 and the rigor of the scoring, not the UI.
+
+|  |  |
+| --- | --- |
+| <img src=".github/assets/interview.png" alt="The live interview room: the interviewer orb, the running transcript, and push-to-talk."> | <img src=".github/assets/report.png" alt="The feedback report: overall score, rubric radar, strengths and gaps."> |
+| **The live room.** Push-to-talk, live transcript, the interviewer's state (listening / thinking / speaking) on the orb. | **The report.** Rubric-scored, with model answers for the weak responses and the full transcript. |
+| <img src=".github/assets/coding.png" alt="The coding round: Monaco editor beside the voice panel, running against a sandbox."> | <img src=".github/assets/dashboard.png" alt="The candidate dashboard: monthly usage, score trend, best score and past interviews."> |
+| **The coding round.** Monaco beside the voice panel; the agent runs your code in a sandbox and grades it against hidden cases. | **The dashboard.** Usage against your plan, score trend, and every past interview. |
 
 ## Highlights
 
@@ -38,21 +44,29 @@ and the rigor of the scoring, not the UI.
 - **State machine + tool-use** drives the interview through phases
   (`intro → warmup → technical → coding → behavioral → wrap_up`). The interview
   cursor is persisted, so an agent restart resumes where it left off.
+- **A real coding round.** Monaco in the browser, code executed in a sandboxed
+  Judge0 runner (no network, hard CPU/memory/wall-clock limits), graded against
+  **multiple hidden test cases** the candidate never sees — passing one example
+  isn't passing. The agent runs it via a `run_code` tool mid-conversation, so the
+  interviewer can react to what you wrote.
 - **Async scored reports.** The interview ends instantly; a durable background
   job grades each rubric competency with structured output and drafts model
-  answers for weak responses.
+  answers for weak responses. A transcript-quality floor (`transcriptIsThin`)
+  flags reports built on too little signal instead of inventing a confident score.
 - **A scorer you can trust.** The feedback grader is measured, not assumed — an
   eval harness proves it distinguishes a good answer from a fluent wrong one, on
   the exact model that ships. See [Evaluating the scorer](#evaluating-the-scorer).
 - **RAG personalization.** Resume + role embedded and matched against a curated
   question bank (Postgres + pgvector) so questions stay grounded.
 - **Billing.** Free (3 fully-tailored interviews/mo) vs Pro (unlimited), monthly
-  or annual (≈2 months free), via Razorpay (test mode for now). Region is
+  or annual (≈3 months free), via Razorpay (test mode for now). Region is
   auto-detected by IP for display pricing; every region checks out via Razorpay.
-- **Request-gated interviews.** A candidate can set up an interview and generate
-  its plan for free, but the costly live voice session (LiveKit + STT + LLM + TTS)
-  only starts after an admin approves the request — a hard spend gate at the
-  choke point.
+- **Request-gated interviews + an ops dashboard.** A candidate can set up an
+  interview and generate its plan for free, but the costly live voice session
+  (LiveKit + STT + LLM + TTS) only starts after an admin approves the request — a
+  hard spend gate at the choke point. `/admin` (allowlisted by Clerk user id, 404s
+  for everyone else) is where that happens: pending / in-flight / completed / average
+  score across all users, the approval queue, and a live activity feed.
 
 ## Evaluating the scorer
 
@@ -149,21 +163,11 @@ way; verify those in a live interview rather than the scorer eval.
 
 Three runtimes, split on purpose: the web app is request/response and
 serverless-friendly; the voice agent is a long-lived worker that holds an audio
-session open for minutes.
+session open for minutes. It can't run on Vercel, so it doesn't.
 
-```
-        Browser (Next.js · LiveKit SDK · Monaco)
-            │ HTTPS (REST)        │ WebRTC (audio + data channel)
-            ▼                     ▼
-   Next.js BFF / API        LiveKit SFU (media transport)
-   • mint scoped tokens          │ agent joins room
-   • CRUD / webhooks             ▼
-   • Clerk · billing       Voice Agent (Python · LiveKit Agents)
-            │                STT → LLM → TTS loop (push-to-talk turns)
-            ▼                tools: next_question, score_answer,
-   Postgres + pgvector             run_code, end_interview
-   Inngest (async report) ◄────────┘
-```
+<p align="center">
+  <img src=".github/assets/architecture.svg" alt="Maven architecture: the browser talks HTTPS to the Next.js BFF and WebRTC to the LiveKit SFU; the Python voice agent joins the room, calls Judge0 for the coding round, and writes turns to Postgres; on end, the BFF enqueues an Inngest job that grades the transcript." width="820">
+</p>
 
 Secrets never reach the browser: it only ever gets a short-lived, room-scoped
 LiveKit token. All third-party calls go through the BFF or the agent.
@@ -201,7 +205,7 @@ infra/
 ## Getting started
 
 **Requirements:** Node 22.13+ (pnpm 11 needs it), pnpm 11, Docker (for local
-Postgres/Redis), Python 3.9+ for local agent dev (prod pins 3.12 — see the agent
+Postgres), Python 3.9+ for local agent dev (prod pins 3.12 — see the agent
 `Dockerfile`).
 
 The app runs as four processes in development: local infra (Docker), the web app,
@@ -211,7 +215,7 @@ the voice agent, and the async job runner (Inngest).
 pnpm install
 pnpm bootstrap              # create .env (linked into apps/web + packages/db)
 # → open .env and fill in keys (Clerk + DATABASE_URL to start)
-docker compose up -d        # local Postgres (pgvector) + Redis
+docker compose up -d        # local Postgres (pgvector)
 pnpm db:push                # apply the schema
 pnpm dev                    # run the web app
 ```
@@ -269,12 +273,16 @@ Three runtimes deploy separately:
 - **Sandboxed code execution** — the coding round runs untrusted code in an
   isolated sandbox with no network and hard CPU/memory/wall-clock limits, never
   in the agent process.
-- **Spend caps** — the live voice session (the priciest path) only starts after
-  an admin approves the interview request, so no one can spin up interviews to
-  burn API credits. On top of that: every interview is hard-capped at 10 minutes
-  of wall-clock (the voice loop auto-ends and the room is torn down), the coding
-  sandbox is bounded per submission (25 runs, 20 KB), and interview creation is
-  rate-limited per user (10/hour) so one account cannot drain metered services.
+- **Spend caps** — nothing metered runs before an admin approves the request. Both
+  the live voice session (the priciest path) and the LLM that generates the question
+  plan sit behind that gate, so an unapproved request costs one database row and no
+  API credits. On top of that: every interview is hard-capped at 10 minutes of
+  wall-clock (the voice loop auto-ends and the room is torn down), the coding sandbox
+  is bounded per submission (25 runs, 20 KB), and each account can only hold a few
+  requests in the approval queue at once (3 free / 10 Pro). That last limit is a
+  ceiling rather than a rate — it is released by an admin approving something, never
+  by waiting — and it is enforced under a per-user advisory lock, so concurrent
+  requests queue instead of all passing the same pre-insert count.
 - **Security headers + CSP** — an enforced Content-Security-Policy (script-src
   pinned to self + the Clerk origin), plus `X-Frame-Options: DENY`, HSTS, and
   `nosniff`, set once in `next.config.ts`.
@@ -288,6 +296,13 @@ Three runtimes deploy separately:
   generated for free users (dropped from the prompt and response schema, so no
   tokens are spent) and never sent to the browser; the free report renders a
   static decoy, so it cannot be revealed by stripping CSS.
+
+## Contributing
+
+[CONTRIBUTING.md](CONTRIBUTING.md) covers the four-process dev stack, the checks that
+must be green before a push (including when the scorer eval becomes mandatory), and
+where to add a question, a coding problem, or a rubric change.
+[CHANGELOG.md](CHANGELOG.md) tracks what shipped in each milestone.
 
 ## Build log
 
