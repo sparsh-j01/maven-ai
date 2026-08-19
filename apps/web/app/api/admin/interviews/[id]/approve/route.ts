@@ -2,7 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { getDb, interviews } from "@maven-ai/db";
 import type { CompanyType, InterviewType, Seniority } from "@maven-ai/shared";
 import { and, eq } from "drizzle-orm";
-import { isAdmin } from "@/lib/admin";
+import { isAdmin } from "@maven-ai/shared/admin";
 import { personalizePlan } from "@/lib/personalize-plan";
 
 // personalizePlan runs retrieval (embed, 8s cap) and THEN the plan LLM (7s cap),

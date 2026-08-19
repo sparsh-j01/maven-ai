@@ -4,7 +4,7 @@ import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { TopBar } from "@/components/top-bar";
 import { Card } from "@/components/ui/card";
-import { isAdmin } from "@/lib/admin";
+import { isAdmin } from "@maven-ai/shared/admin";
 import { STATUS_DOT, STATUS_LABEL } from "@/lib/interview-status";
 import { ApproveButton } from "./approve-button";
 
