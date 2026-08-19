@@ -23,6 +23,22 @@ function clerkHost(): string {
   return "*.clerk.accounts.dev";
 }
 
+// Interview start is admin-gated, so an empty allowlist is not a degraded deploy —
+// it is one where no interview can EVER be approved, which is the product's core
+// action. It also fails completely silently: isAdmin() just returns false for
+// everyone, the Admin entry never appears in the avatar menu, and /admin 404s at
+// the owner too. Refuse to build it.
+//
+// VERCEL_ENV, not NODE_ENV like clerkHost() above: `next build` sets
+// NODE_ENV=production inside CI too, where ci.yml writes four env vars and this is
+// not one of them. VERCEL_ENV is "production" only for the deploy whose environment
+// real users get — undefined in GitHub Actions, "preview" for preview deploys.
+if (process.env.VERCEL_ENV === "production" && !process.env.ADMIN_USER_IDS?.trim()) {
+  throw new Error(
+    "ADMIN_USER_IDS is empty — refusing to build a deploy where no interview could ever be approved.",
+  );
+}
+
 // The four origins the BROWSER actually opens a connection to. Sentry is not among
 // them — it runs server + edge only (there is no sentry.client.config), so it needs
 // no connect-src entry.
