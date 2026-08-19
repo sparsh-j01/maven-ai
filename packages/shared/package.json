@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./admin": "./src/admin.ts",
     "./embed": "./src/embed.ts",
     "./models": "./src/models.ts"
   },
