@@ -1,4 +1,3 @@
-import { UserButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
 import {
   feedbackReports,
@@ -8,6 +7,7 @@ import {
   users,
 } from "@maven-ai/db";
 import { isCycle, monthStart, PLAN_LIMITS, UNBILLED_STATUSES } from "@maven-ai/shared";
+import { isAdmin } from "@maven-ai/shared/admin";
 import { and, desc, eq, gte, notInArray, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import Link from "next/link";
@@ -17,6 +17,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CancelButton } from "@/components/cancel-button";
 import { UpgradeButton } from "@/components/upgrade-button";
+import { UserMenu } from "@/components/user-menu";
 import { STATUS_DOT, STATUS_LABEL } from "@/lib/interview-status";
 
 export const dynamic = "force-dynamic";
@@ -129,6 +130,9 @@ export default async function DashboardPage({
   const subStatus = userId ? await getSubStatus(userId) : null;
   // Plan comes from the DB only — the Razorpay webhook is what makes someone Pro.
   const isPro = plan === "pro";
+  // Presentation only. Every admin route re-checks the session itself; this just
+  // decides whether the avatar menu offers the shortcut.
+  const admin = isAdmin(userId);
   const cancelling = subStatus === "cancelling";
 
   const usedThisMonth = userId ? await billableThisMonth(userId) : 0;
@@ -170,7 +174,7 @@ export default async function DashboardPage({
           <>
             {!isPro && <UpgradeButton cycle={cycle} />}
             {isPro && !cancelling && <CancelButton />}
-            <UserButton />
+            <UserMenu isAdmin={admin} />
           </>
         }
       />
